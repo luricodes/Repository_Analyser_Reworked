@@ -49,7 +49,7 @@ coverage.xml
 *.cover
 .hypothesis/
 .pytest_cache/
-tests
+tests/
 
 # MyPy
 .mypy_cache/
