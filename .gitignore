@@ -79,3 +79,9 @@ repo_analyzer/logging/__pycache__/
 tests/test_cache.py
 tests/test_cache.py
 tests/test_output.py
+tests/test_cache.py
+tests/test_config.py
+tests/test_logging.py
+tests/test_output.py
+tests/test_processing.py
+tests/test_traversal.py
