@@ -6,6 +6,7 @@ from typing import Any, Dict
 
 from colorama import Fore, Style
 
+
 def output_to_json(data: Dict[str, Any], output_file: str) -> None:
     """
     Schreibt die Daten in eine JSON-Datei.

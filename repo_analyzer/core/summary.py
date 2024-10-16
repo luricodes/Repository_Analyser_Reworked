@@ -2,6 +2,7 @@
 
 from typing import Any, Dict
 
+
 def create_summary(structure: Dict[str, Any], summary: Dict[str, Any], include_summary: bool) -> Dict[str, Any]:
     """
     Erstellt die Zusammenfassung der Verzeichnisstruktur.

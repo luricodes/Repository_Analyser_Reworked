@@ -1,22 +1,34 @@
 # repo_analyzer/core/application.py
 
-import json
 import logging
 import multiprocessing
+import sys
 import threading
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict
 
 from repo_analyzer.cache.sqlite_cache import clean_cache, initialize_db
 from repo_analyzer.cli.parser import parse_arguments
-from repo_analyzer.config.defaults import DEFAULT_EXCLUDED_FOLDERS, CACHE_DB_FILE, DEFAULT_EXCLUDED_FILES
+from repo_analyzer.config.defaults import (
+    CACHE_DB_FILE,
+    DEFAULT_EXCLUDED_FOLDERS,
+    DEFAULT_EXCLUDED_FILES,
+)
 from repo_analyzer.config.loader import load_config
+from repo_analyzer.core.summary import create_summary
 from repo_analyzer.logging.setup import setup_logging
 from repo_analyzer.output.output_factory import OutputFactory
 from repo_analyzer.traversal.traverser import get_directory_structure
-from repo_analyzer.core.summary import create_summary
+
 
 def run() -> None:
+    """
+    Hauptfunktion zur Analyse von Repositorys.
+
+    Diese Funktion parst die Argumente, lädt die Konfiguration,
+    richtet das Logging ein, initialisiert den Cache, traversiert
+    das Verzeichnis und erstellt die Ausgabe.
+    """
     args = parse_arguments()
 
     # Lade die Konfigurationsdatei, falls angegeben
@@ -32,10 +44,10 @@ def run() -> None:
     additional_excluded_folders = set(args.exclude_folders)
     additional_excluded_files = set(args.exclude_files)
     follow_symlinks = args.follow_symlinks
-    additional_image_extensions = set(
+    additional_image_extensions = {
         ext.lower() if ext.startswith('.') else f'.{ext.lower()}'
         for ext in args.image_extensions
-    )
+    }
     include_summary = args.include_summary  # Neue Option
     output_format = args.format
     threads = args.threads
@@ -45,20 +57,20 @@ def run() -> None:
     # Dynamische Bestimmung der Thread-Anzahl, falls nicht angegeben
     if threads is None:
         threads = multiprocessing.cpu_count() * 2
-        logging.info(
-            f"Dynamisch festgelegte Anzahl der Threads: {threads}"
-        )
+        logging.info(f"Dynamisch festgelegte Anzahl der Threads: {threads}")
 
     # Kombiniere die standardmäßigen und zusätzlichen Ausschlüsse aus Argumenten und Konfigurationsdatei
     config_excluded_folders = set(config.get('exclude_folders', []))
     config_excluded_files = set(config.get('exclude_files', []))
     config_exclude_patterns = config.get('exclude_patterns', [])
 
-    excluded_folders = DEFAULT_EXCLUDED_FOLDERS.union(
-        additional_excluded_folders, config_excluded_folders
+    excluded_folders = (
+        DEFAULT_EXCLUDED_FOLDERS
+        .union(additional_excluded_folders, config_excluded_folders)
     )
-    excluded_files = set(DEFAULT_EXCLUDED_FILES).union(
-        additional_excluded_files, config_excluded_files
+    excluded_files = (
+        set(DEFAULT_EXCLUDED_FILES)
+        .union(additional_excluded_files, config_excluded_files)
     )
     exclude_patterns = exclude_patterns + config_exclude_patterns
 
@@ -74,45 +86,22 @@ def run() -> None:
         '.tiff',
     }.union(additional_image_extensions)
 
-    logging.info(
-        f"Durchsuche das Verzeichnis: {root_directory}"
-    )
-    logging.info(
-        f"Ausgeschlossene Ordner: {', '.join(excluded_folders)}"
-    )
-    logging.info(
-        f"Ausgeschlossene Dateien: {', '.join(excluded_files)}"
-    )
+    logging.info(f"Durchsuche das Verzeichnis: {root_directory}")
+    logging.info(f"Ausgeschlossene Ordner: {', '.join(excluded_folders)}")
+    logging.info(f"Ausgeschlossene Dateien: {', '.join(excluded_files)}")
     if not include_binary:
-        logging.info(
-            f"Binäre Dateien und Bilddateien sind ausgeschlossen."
-        )
+        logging.info("Binäre Dateien und Bilddateien sind ausgeschlossen.")
     else:
-        logging.info(
-            f"Binäre Dateien und Bilddateien werden einbezogen."
-        )
+        logging.info("Binäre Dateien und Bilddateien werden einbezogen.")
+    logging.info(f"Maximale Dateigröße zum Lesen: {max_file_size} Bytes")
+    logging.info(f"Ausgabe in: {output_file} ({output_format})")
     logging.info(
-        f"Maximale Dateigröße zum Lesen: {max_file_size} Bytes"
+        f"Symbolische Links werden {'gefolgt' if follow_symlinks else 'nicht gefolgt'}"
     )
-    logging.info(
-        f"Ausgabe in: {output_file} ({output_format})"
-    )
-    logging.info(
-        f"Symbolische Links werden "
-        f"{'gefolgt' if follow_symlinks else 'nicht gefolgt'}"
-    )
-    logging.info(
-        f"Bilddateiendungen: {', '.join(sorted(image_extensions))}"
-    )
-    logging.info(
-        f"Ausschlussmuster: {', '.join(exclude_patterns)}"
-    )
-    logging.info(
-        f"Anzahl der Threads: {threads}"
-    )
-    logging.info(
-        f"Standard-Encoding: {encoding}"
-    )
+    logging.info(f"Bilddateiendungen: {', '.join(sorted(image_extensions))}")
+    logging.info(f"Ausschlussmuster: {', '.join(exclude_patterns)}")
+    logging.info(f"Anzahl der Threads: {threads}")
+    logging.info(f"Standard-Encoding: {encoding}")
 
     # Initialisiere den SQLite-Cache
     cache_db_path = root_directory / CACHE_DB_FILE
@@ -140,9 +129,7 @@ def run() -> None:
             encoding=encoding,
         )
     except KeyboardInterrupt:
-        logging.warning(
-            "Skript wurde vom Benutzer abgebrochen."
-        )
+        logging.warning("Skript wurde vom Benutzer abgebrochen.")
         # Optional: Speichere die aktuelle Struktur bis zum Abbruchpunkt
         try:
             output_data: Dict[str, Any] = {}
@@ -164,13 +151,11 @@ def run() -> None:
             )
         finally:
             conn.close()
-            exit(1)
+            sys.exit(1)
     except Exception as e:
-        logging.error(
-            f"Ein unerwarteter Fehler ist aufgetreten: {e}"
-        )
+        logging.error(f"Ein unerwarteter Fehler ist aufgetreten: {e}")
         conn.close()
-        exit(1)
+        sys.exit(1)
 
     # Erstelle die Zusammenfassung
     output_data = create_summary(structure, summary, include_summary)
@@ -185,9 +170,7 @@ def run() -> None:
             f"wurden erfolgreich in '{output_file}' gespeichert."
         )
     except Exception as e:
-        logging.error(
-            f"Fehler beim Schreiben der Ausgabedatei: {str(e)}"
-        )
+        logging.error(f"Fehler beim Schreiben der Ausgabedatei: {str(e)}")
 
     # Schließe die SQLite-Verbindung
     conn.close()

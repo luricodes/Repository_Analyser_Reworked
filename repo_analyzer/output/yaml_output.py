@@ -6,6 +6,7 @@ from typing import Any, Dict
 from colorama import Fore, Style
 import yaml
 
+
 def output_to_yaml(data: Dict[str, Any], output_file: str) -> None:
     """
     Schreibt die Daten in eine YAML-Datei.

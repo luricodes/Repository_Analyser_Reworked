@@ -6,6 +6,7 @@ from .json_output import output_to_json
 from .yaml_output import output_to_yaml
 from .xml_output import output_to_xml
 
+
 class OutputFactory:
     """
     Factory zur Auswahl des Ausgabeformats basierend auf dem Benutzerinput.
