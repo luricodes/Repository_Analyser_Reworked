@@ -76,3 +76,6 @@ Thumbs.db
 repo_analyzer/__pycache__/
 repo_analyzer/logging/__pycache__/
 .gitignore
+tests/test_cache.py
+tests/test_cache.py
+tests/test_output.py
