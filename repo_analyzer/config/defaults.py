@@ -2,7 +2,7 @@
 
 DEFAULT_EXCLUDED_FOLDERS = {
     'tmp',
-    'node_modules',  
+    'node_modules',
     '.git',
     'dist',
     'build',
@@ -18,12 +18,16 @@ DEFAULT_EXCLUDED_FOLDERS = {
     '.idea',
     'logs',
     'assets',
-    'bower_components'
+    'bower_components',
 }
 
 DEFAULT_EXCLUDED_FILES = {
-    'config.json', 'secret.txt', 'package-lock.json',
-    'favicon.ico', 'GeistMonoVF.woff', 'GeistVF.woff'
+    'config.json',
+    'secret.txt',
+    'package-lock.json',
+    'favicon.ico',
+    'GeistMonoVF.woff',
+    'GeistVF.woff',
 }
 
 DEFAULT_MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB

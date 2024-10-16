@@ -4,6 +4,7 @@ import logging
 from colorama import Fore, Style
 from pathlib import Path
 
+
 def is_binary_alternative(file_path: Path) -> bool:
     """
     Alternative Methode zur Binärdatei-Erkennung:

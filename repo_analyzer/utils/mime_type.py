@@ -9,10 +9,12 @@ from .helpers import is_binary_alternative
 
 thread_local_data = threading.local()
 
+
 def get_magic_instance():
     if not hasattr(thread_local_data, 'mime'):
         thread_local_data.mime = magic.Magic(mime=True)
     return thread_local_data.mime
+
 
 def is_binary(file_path: Path) -> bool:
     """
