@@ -49,6 +49,7 @@ coverage.xml
 *.cover
 .hypothesis/
 .pytest_cache/
+tests
 
 # MyPy
 .mypy_cache/
@@ -74,3 +75,4 @@ Thumbs.db
 # Ignore other specific directories or files
 repo_analyzer/__pycache__/
 repo_analyzer/logging/__pycache__/
+.gitignore
