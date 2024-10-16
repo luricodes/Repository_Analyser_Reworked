@@ -1,0 +1,5 @@
+colorama
+dicttoxml
+PyYAML
+tqdm
+python-magic
