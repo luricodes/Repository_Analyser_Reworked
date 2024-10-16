@@ -1,23 +1,27 @@
 # repo_analyzer/main.py
 
-from repo_analyzer.traversal.traverser import recursive_traverse, count_total_files
-from repo_analyzer.traversal.patterns import matches_patterns
-from repo_analyzer.config.loader import load_config
-from repo_analyzer.config.defaults import DEFAULT_EXCLUDED_FOLDERS, DEFAULT_EXCLUDED_FILES, DEFAULT_MAX_FILE_SIZE, CACHE_DB_FILE
-from repo_analyzer.logging.setup import setup_logging
-from repo_analyzer.cache.sqlite_cache import initialize_db, clean_cache
-from repo_analyzer.traversal.traverser import get_directory_structure
-from repo_analyzer.output.yaml_output import output_to_yaml
-from repo_analyzer.output.xml_output import output_to_xml
-from repo_analyzer.cli.parser import parse_arguments
-
 import json
-from pathlib import Path
 import logging
-from typing import Tuple, Dict, Any
-from colorama import Fore, Style
 import multiprocessing
 import threading
+from pathlib import Path
+from typing import Any, Dict
+
+from colorama import Fore, Style
+
+from repo_analyzer.cache.sqlite_cache import clean_cache, initialize_db
+from repo_analyzer.cli.parser import parse_arguments
+from repo_analyzer.config.defaults import (
+    CACHE_DB_FILE,
+    DEFAULT_EXCLUDED_FILES,
+    DEFAULT_EXCLUDED_FOLDERS,
+)
+from repo_analyzer.config.loader import load_config
+from repo_analyzer.logging.setup import setup_logging
+from repo_analyzer.output.xml_output import output_to_xml
+from repo_analyzer.output.yaml_output import output_to_yaml
+from repo_analyzer.traversal.traverser import get_directory_structure
+
 
 def main() -> None:
     args = parse_arguments()
@@ -36,7 +40,8 @@ def main() -> None:
     additional_excluded_files = set(args.exclude_files)
     follow_symlinks = args.follow_symlinks
     additional_image_extensions = set(
-        ext.lower() if ext.startswith('.') else f'.{ext.lower()}' for ext in args.image_extensions
+        ext.lower() if ext.startswith('.') else f'.{ext.lower()}'
+        for ext in args.image_extensions
     )
     include_summary = args.include_summary  # Neue Option
     output_format = args.format
@@ -47,36 +52,87 @@ def main() -> None:
     # Dynamische Bestimmung der Thread-Anzahl, falls nicht angegeben
     if threads is None:
         threads = multiprocessing.cpu_count() * 2
-        logging.info(f"{Fore.CYAN}Dynamisch festgelegte Anzahl der Threads: {threads}{Style.RESET_ALL}")
+        logging.info(
+            f"{Fore.CYAN}Dynamisch festgelegte Anzahl der Threads: {threads}"
+            f"{Style.RESET_ALL}"
+        )
 
     # Kombiniere die standardmäßigen und zusätzlichen Ausschlüsse aus Argumenten und Konfigurationsdatei
     config_excluded_folders = set(config.get('exclude_folders', []))
     config_excluded_files = set(config.get('exclude_files', []))
     config_exclude_patterns = config.get('exclude_patterns', [])
 
-    excluded_folders = DEFAULT_EXCLUDED_FOLDERS.union(additional_excluded_folders, config_excluded_folders)
-    excluded_files = DEFAULT_EXCLUDED_FILES.union(additional_excluded_files, config_excluded_files)
+    excluded_folders = DEFAULT_EXCLUDED_FOLDERS.union(
+        additional_excluded_folders, config_excluded_folders
+    )
+    excluded_files = DEFAULT_EXCLUDED_FILES.union(
+        additional_excluded_files, config_excluded_files
+    )
     exclude_patterns = exclude_patterns + config_exclude_patterns
 
     # Kombiniere die standardmäßigen und zusätzlichen Bilddateiendungen
     image_extensions = {
-        '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg', '.webp', '.tiff'
+        '.png',
+        '.jpg',
+        '.jpeg',
+        '.gif',
+        '.bmp',
+        '.svg',
+        '.webp',
+        '.tiff',
     }.union(additional_image_extensions)
 
-    logging.info(f"{Fore.BLUE}Durchsuche das Verzeichnis: {root_directory}{Style.RESET_ALL}")
-    logging.info(f"{Fore.MAGENTA}Ausgeschlossene Ordner: {', '.join(excluded_folders)}{Style.RESET_ALL}")
-    logging.info(f"{Fore.MAGENTA}Ausgeschlossene Dateien: {', '.join(excluded_files)}{Style.RESET_ALL}")
+    logging.info(
+        f"{Fore.BLUE}Durchsuche das Verzeichnis: {root_directory}"
+        f"{Style.RESET_ALL}"
+    )
+    logging.info(
+        f"{Fore.MAGENTA}Ausgeschlossene Ordner: {', '.join(excluded_folders)}"
+        f"{Style.RESET_ALL}"
+    )
+    logging.info(
+        f"{Fore.MAGENTA}Ausgeschlossene Dateien: {', '.join(excluded_files)}"
+        f"{Style.RESET_ALL}"
+    )
     if not include_binary:
-        logging.info(f"{Fore.RED}Binäre Dateien und Bilddateien sind ausgeschlossen.{Style.RESET_ALL}")
+        logging.info(
+            f"{Fore.RED}Binäre Dateien und Bilddateien sind ausgeschlossen."
+            f"{Style.RESET_ALL}"
+        )
     else:
-        logging.info(f"{Fore.GREEN}Binäre Dateien und Bilddateien werden einbezogen.{Style.RESET_ALL}")
-    logging.info(f"{Fore.YELLOW}Maximale Dateigröße zum Lesen: {max_file_size} Bytes{Style.RESET_ALL}")
-    logging.info(f"{Fore.CYAN}Ausgabe in: {output_file} ({output_format}){Style.RESET_ALL}")
-    logging.info(f"{Fore.CYAN}Symbolische Links werden {'gefolgt' if follow_symlinks else 'nicht gefolgt'}{Style.RESET_ALL}")
-    logging.info(f"{Fore.MAGENTA}Bilddateiendungen: {', '.join(sorted(image_extensions))}{Style.RESET_ALL}")
-    logging.info(f"{Fore.MAGENTA}Ausschlussmuster: {', '.join(exclude_patterns)}{Style.RESET_ALL}")
-    logging.info(f"{Fore.MAGENTA}Anzahl der Threads: {threads}{Style.RESET_ALL}")
-    logging.info(f"{Fore.MAGENTA}Standard-Encoding: {encoding}{Style.RESET_ALL}")
+        logging.info(
+            f"{Fore.GREEN}Binäre Dateien und Bilddateien werden einbezogen."
+            f"{Style.RESET_ALL}"
+        )
+    logging.info(
+        f"{Fore.YELLOW}Maximale Dateigröße zum Lesen: {max_file_size} Bytes"
+        f"{Style.RESET_ALL}"
+    )
+    logging.info(
+        f"{Fore.CYAN}Ausgabe in: {output_file} ({output_format})"
+        f"{Style.RESET_ALL}"
+    )
+    logging.info(
+        f"{Fore.CYAN}Symbolische Links werden "
+        f"{'gefolgt' if follow_symlinks else 'nicht gefolgt'}"
+        f"{Style.RESET_ALL}"
+    )
+    logging.info(
+        f"{Fore.MAGENTA}Bilddateiendungen: {', '.join(sorted(image_extensions))}"
+        f"{Style.RESET_ALL}"
+    )
+    logging.info(
+        f"{Fore.MAGENTA}Ausschlussmuster: {', '.join(exclude_patterns)}"
+        f"{Style.RESET_ALL}"
+    )
+    logging.info(
+        f"{Fore.MAGENTA}Anzahl der Threads: {threads}"
+        f"{Style.RESET_ALL}"
+    )
+    logging.info(
+        f"{Fore.MAGENTA}Standard-Encoding: {encoding}"
+        f"{Style.RESET_ALL}"
+    )
 
     # Initialisiere den SQLite-Cache
     cache_db_path = root_directory / CACHE_DB_FILE
@@ -101,13 +157,15 @@ def main() -> None:
             conn=conn,
             lock=cache_lock,
             threads=threads,
-            encoding=encoding
+            encoding=encoding,
         )
     except KeyboardInterrupt:
-        logging.warning(f"{Fore.RED}\nSkript wurde vom Benutzer abgebrochen.{Style.RESET_ALL}")
+        logging.warning(
+            f"{Fore.RED}\nSkript wurde vom Benutzer abgebrochen.{Style.RESET_ALL}"
+        )
         # Optional: Speichere die aktuelle Struktur bis zum Abbruchpunkt
         try:
-            output_data = {}
+            output_data: Dict[str, Any] = {}
             if include_summary and summary:
                 output_data["summary"] = summary
             if structure:
@@ -116,30 +174,47 @@ def main() -> None:
             if include_summary and summary:
                 if output_format == 'json':
                     with open(output_file, 'w', encoding='utf-8') as out_file:
-                        json.dump(output_data, out_file, ensure_ascii=False, indent=4)
+                        json.dump(
+                            output_data, out_file, ensure_ascii=False, indent=4
+                        )
                 elif output_format == 'yaml':
                     output_to_yaml(output_data, output_file)
                 elif output_format == 'xml':
                     output_to_xml(output_data, output_file)
 
-                logging.info(f"{Fore.YELLOW}Der aktuelle Stand der Ordnerstruktur und die Zusammenfassung wurden in '{output_file}' gespeichert.{Style.RESET_ALL}")
+                logging.info(
+                    f"{Fore.YELLOW}Der aktuelle Stand der Ordnerstruktur und die "
+                    f"Zusammenfassung wurden in '{output_file}' gespeichert."
+                    f"{Style.RESET_ALL}"
+                )
             else:
                 if output_format == 'json':
                     with open(output_file, 'w', encoding='utf-8') as out_file:
-                        json.dump(output_data, out_file, ensure_ascii=False, indent=4)
+                        json.dump(
+                            output_data, out_file, ensure_ascii=False, indent=4
+                        )
                 elif output_format == 'yaml':
                     output_to_yaml(output_data, output_file)
                 elif output_format == 'xml':
                     output_to_xml(output_data, output_file)
 
-                logging.info(f"{Fore.YELLOW}Der aktuelle Stand der Ordnerstruktur wurde in '{output_file}' gespeichert.{Style.RESET_ALL}")
+                logging.info(
+                    f"{Fore.YELLOW}Der aktuelle Stand der Ordnerstruktur wurde in "
+                    f"'{output_file}' gespeichert.{Style.RESET_ALL}"
+                )
         except Exception as e:
-            logging.error(f"{Fore.RED}Fehler beim Schreiben der Ausgabedatei nach Abbruch: {str(e)}{Style.RESET_ALL}")
+            logging.error(
+                f"{Fore.RED}Fehler beim Schreiben der Ausgabedatei nach Abbruch: "
+                f"{str(e)}{Style.RESET_ALL}"
+            )
         finally:
             conn.close()
             exit(1)
     except Exception as e:
-        logging.error(f"{Fore.RED}Ein unerwarteter Fehler ist aufgetreten: {e}{Style.RESET_ALL}")
+        logging.error(
+            f"{Fore.RED}Ein unerwarteter Fehler ist aufgetreten: {e}"
+            f"{Style.RESET_ALL}"
+        )
         conn.close()
         exit(1)
 
@@ -147,7 +222,7 @@ def main() -> None:
     if include_summary and summary:
         output_data = {
             "summary": summary,
-            "structure": structure
+            "structure": structure,
         }
     else:
         output_data = structure
@@ -163,11 +238,21 @@ def main() -> None:
             output_to_xml(output_data, output_file)
 
         if include_summary and summary:
-            logging.info(f"{Fore.GREEN}Die Ordnerstruktur und die Zusammenfassung wurden erfolgreich in '{output_file}' gespeichert.{Style.RESET_ALL}")
+            logging.info(
+                f"{Fore.GREEN}Die Ordnerstruktur und die Zusammenfassung wurden "
+                f"erfolgreich in '{output_file}' gespeichert."
+                f"{Style.RESET_ALL}"
+            )
         else:
-            logging.info(f"{Fore.GREEN}Die Ordnerstruktur wurde erfolgreich in '{output_file}' gespeichert.{Style.RESET_ALL}")
+            logging.info(
+                f"{Fore.GREEN}Die Ordnerstruktur wurde erfolgreich in '{output_file}'"
+                f" gespeichert.{Style.RESET_ALL}"
+            )
     except Exception as e:
-        logging.error(f"{Fore.RED}Fehler beim Schreiben der Ausgabedatei: {str(e)}{Style.RESET_ALL}")
+        logging.error(
+            f"{Fore.RED}Fehler beim Schreiben der Ausgabedatei: {str(e)}"
+            f"{Style.RESET_ALL}"
+        )
 
     # Schließe die SQLite-Verbindung
     conn.close()
