@@ -2,7 +2,7 @@
 
 DEFAULT_EXCLUDED_FOLDERS = {
     'tmp',
-    'node_modules',
+    #'node_modules',
     '.git',
     'dist',
     'build',

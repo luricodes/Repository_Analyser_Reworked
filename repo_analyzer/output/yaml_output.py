@@ -3,9 +3,8 @@
 import logging
 from typing import Any, Dict
 
-import yaml
 from colorama import Fore, Style
-
+import yaml
 
 def output_to_yaml(data: Dict[str, Any], output_file: str) -> None:
     """

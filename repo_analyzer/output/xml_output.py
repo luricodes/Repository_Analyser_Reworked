@@ -1,15 +1,10 @@
 # repo_analyzer/output/xml_output.py
 
-"""
-Modul zur Ausgabe von Repository-Daten in XML-Format.
-"""
-
 import logging
 from typing import Any, Dict
 
 from colorama import Fore, Style
 from dicttoxml import dicttoxml
-
 
 def output_to_xml(data: Dict[str, Any], output_file: str) -> None:
     """
@@ -29,6 +24,5 @@ def output_to_xml(data: Dict[str, Any], output_file: str) -> None:
             xml_file.write(xml_bytes)
     except Exception as e:
         logging.error(
-            f"{Fore.RED}Fehler beim Konvertieren der Daten zu XML: {e}"
-            f"{Style.RESET_ALL}"
+            f"{Fore.RED}Fehler beim Konvertieren der Daten zu XML: {e}{Style.RESET_ALL}"
         )

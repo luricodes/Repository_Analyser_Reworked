@@ -14,7 +14,7 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "repo_analyzer=repo_analyzer.main:main",
+            "repo_analyzer=repo_analyzer.main:run",
         ],
     },
 )
