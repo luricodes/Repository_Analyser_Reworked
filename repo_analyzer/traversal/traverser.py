@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Set, Tuple
 
 from colorama import Fore, Style
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, Future
 from tqdm import tqdm
 
 from repo_analyzer.processing.file_processor import process_file
@@ -23,14 +23,24 @@ def recursive_traverse(
 ) -> List[Path]:
     """
     Rekursive Traversierung des Verzeichnisses, wobei ausgeschlossene Ordner und Dateien übersprungen werden.
-    """
-    paths = []
-    visited_paths = set()
 
-    def _traverse(current_dir: Path):
+    Args:
+        root_dir (Path): Das Wurzelverzeichnis zum Traversieren.
+        excluded_folders (Set[str]): Eine Menge von Ordnernamen, die ausgeschlossen werden sollen.
+        excluded_files (Set[str]): Eine Menge von Dateinamen, die ausgeschlossen werden sollen.
+        exclude_patterns (List[str]): Eine Liste von Mustern zum Ausschließen von Dateien und Ordnern.
+        follow_symlinks (bool): Gibt an, ob symbolischen Links gefolgt werden sollen.
+
+    Returns:
+        List[Path]: Eine Liste der eingeschlossenen Dateipfade.
+    """
+    paths: List[Path] = []
+    visited_paths: Set[Path] = set()
+
+    def _traverse(current_dir: Path) -> None:
         try:
             if follow_symlinks:
-                resolved_dir = current_dir.resolve()
+                resolved_dir: Path = current_dir.resolve()
                 if resolved_dir in visited_paths:
                     logging.warning(
                         f"{Fore.RED}Zirkulärer symbolischer Link gefunden: {current_dir}{Style.RESET_ALL}"
@@ -87,16 +97,26 @@ def count_total_files(
 ) -> Tuple[int, int]:
     """
     Zählt die insgesamt eingeschlossenen und ausgeschlossenen Dateien.
-    """
-    included = 0
-    excluded = 0
-    visited_paths = set()
 
-    def _traverse_count(current_dir: Path):
+    Args:
+        root_dir (Path): Das Wurzelverzeichnis zum Traversieren.
+        excluded_folders (Set[str]): Eine Menge von Ordnernamen, die ausgeschlossen werden sollen.
+        excluded_files (Set[str]): Eine Menge von Dateinamen, die ausgeschlossen werden sollen.
+        exclude_patterns (List[str]): Eine Liste von Mustern zum Ausschließen von Dateien und Ordnern.
+        follow_symlinks (bool): Gibt an, ob symbolischen Links gefolgt werden sollen.
+
+    Returns:
+        Tuple[int, int]: Ein Tupel bestehend aus der Anzahl der eingeschlossenen und ausgeschlossenen Dateien.
+    """
+    included: int = 0
+    excluded: int = 0
+    visited_paths: Set[Path] = set()
+
+    def _traverse_count(current_dir: Path) -> None:
         nonlocal included, excluded
         try:
             if follow_symlinks:
-                resolved_dir = current_dir.resolve()
+                resolved_dir: Path = current_dir.resolve()
                 if resolved_dir in visited_paths:
                     logging.warning(
                         f"{Fore.RED}Zirkulärer symbolischer Link gefunden: {current_dir}{Style.RESET_ALL}"
@@ -158,6 +178,23 @@ def get_directory_structure(
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """
     Erstellt die Verzeichnisstruktur als verschachteltes Dictionary.
+
+    Args:
+        root_dir (Path): Das Wurzelverzeichnis zum Traversieren.
+        max_file_size (int): Maximale Dateigröße in Bytes.
+        include_binary (bool): Gibt an, ob Binärdateien eingeschlossen werden sollen.
+        excluded_folders (Set[str]): Eine Menge von Ordnernamen, die ausgeschlossen werden sollen.
+        excluded_files (Set[str]): Eine Menge von Dateinamen, die ausgeschlossen werden sollen.
+        follow_symlinks (bool): Gibt an, ob symbolischen Links gefolgt werden sollen.
+        image_extensions (Set[str]): Eine Menge von Bilddateiendungen, die berücksichtigt werden sollen.
+        exclude_patterns (List[str]): Eine Liste von Mustern zum Ausschließen von Dateien und Ordnern.
+        conn (sqlite3.Connection): Eine SQLite-Verbindungsinstanz.
+        lock (threading.Lock): Ein Threading-Lock zur Synchronisation.
+        threads (int): Anzahl der Threads für die parallele Verarbeitung.
+        encoding (str, optional): Die Zeichenkodierung für die Verarbeitung. Standard ist 'utf-8'.
+
+    Returns:
+        Tuple[Dict[str, Any], Dict[str, Any]]: Ein Tupel bestehend aus der Verzeichnisstruktur und einer Zusammenfassung.
     """
     dir_structure: Dict[str, Any] = {}
 
@@ -169,8 +206,8 @@ def get_directory_structure(
         exclude_patterns,
         follow_symlinks
     )
-    total_files = included_files + excluded_files_count
-    excluded_percentage = (excluded_files_count / total_files) * 100 if total_files else 0
+    total_files: int = included_files + excluded_files_count
+    excluded_percentage: float = (excluded_files_count / total_files * 100) if total_files else 0.0
 
     logging.info(
         f"{Fore.MAGENTA}Gesamtzahl der Dateien: {total_files}{Style.RESET_ALL}"
@@ -182,7 +219,7 @@ def get_directory_structure(
         f"{Fore.GREEN}Verarbeitete Dateien: {included_files}{Style.RESET_ALL}"
     )
 
-    pbar = tqdm(
+    pbar: tqdm = tqdm(
         total=included_files,
         desc="Verarbeite Dateien",
         unit="file",
@@ -192,7 +229,7 @@ def get_directory_structure(
     failed_files: List[Dict[str, str]] = []
 
     # Sammle alle Dateien, die verarbeitet werden sollen
-    files_to_process = recursive_traverse(
+    files_to_process: List[Path] = recursive_traverse(
         root_dir,
         excluded_folders,
         excluded_files,
@@ -202,7 +239,7 @@ def get_directory_structure(
 
     # Verwende ThreadPoolExecutor für parallele Verarbeitung
     with ThreadPoolExecutor(max_workers=threads) as executor:
-        future_to_file = {}
+        future_to_file: Dict[Future[Tuple[str, Any]], Path] = {}
         try:
             for file_path in files_to_process:
                 future = executor.submit(
@@ -233,30 +270,38 @@ def get_directory_structure(
 
         try:
             for future in as_completed(future_to_file):
-                file_path = future_to_file[future]
+                file_path_parent: Path = future_to_file[future]
                 try:
+                    filename: str
+                    file_info: Any
                     filename, file_info = future.result()
                     if file_info is not None:
                         # Erstelle die verschachtelte Struktur
-                        relative_parent = file_path.relative_to(root_dir)
-                        current = dir_structure
+                        try:
+                            relative_parent: Path = file_path_parent.relative_to(root_dir)
+                        except ValueError:
+                            # Falls file_path_parent nicht relativ zu root_dir ist
+                            relative_parent = file_path_parent
+
+                        current: Dict[str, Any] = dir_structure
                         for part in relative_parent.parts:
                             current = current.setdefault(part, {})
                         current[filename] = file_info
                 except Exception as e:
                     # Finde den vollständigen Pfad zur Datei
                     try:
-                        filename = future_to_file[future].name
-                        file_path_full = future_to_file[future] / filename
+                        filename: str = file_path_parent.name
+                        file_path_full: Path = file_path_parent / filename
                     except Exception:
-                        file_path_full = str(future_to_file[future])
+                        file_path_full: str = str(file_path_parent)
 
                     # Erstelle die verschachtelte Struktur mit Fehlerinformationen
                     try:
-                        relative_parent = Path(file_path).relative_to(root_dir)
+                        relative_parent: Path = file_path_parent.relative_to(root_dir)
                     except ValueError:
                         relative_parent = Path(file_path_full).parent
-                    current = dir_structure
+
+                    current: Dict[str, Any] = dir_structure
                     for part in relative_parent.parts:
                         current = current.setdefault(part, {})
                     current[
@@ -286,7 +331,7 @@ def get_directory_structure(
     pbar.close()
 
     # Erstelle die Zusammenfassung
-    summary = {
+    summary: Dict[str, Any] = {
         "total_files": total_files,
         "excluded_files": excluded_files_count,
         "included_files": included_files,
