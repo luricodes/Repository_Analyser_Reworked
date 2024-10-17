@@ -22,50 +22,53 @@ def process_file(
     conn: sqlite3.Connection,
     lock: threading.Lock,
     encoding: str = 'utf-8',
-    hash_algorithm: Optional[str] = "md5",  # Neuer Parameter
+    hash_algorithm: Optional[str] = "md5",
 ) -> Tuple[str, Optional[Dict[str, Any]]]:
-    """
-    Verarbeitet eine einzelne Datei und gibt deren Informationen zurück.
-
-    Args:
-        file_path (Path): Pfad zur Datei.
-        max_file_size (int): Maximale Dateigröße in Bytes.
-        include_binary (bool): Gibt an, ob binäre Dateien eingeschlossen werden sollen.
-        image_extensions (Set[str]): Set von Bilddateiendungen.
-        conn (sqlite3.Connection): SQLite-Verbindung.
-        lock (threading.Lock): Lock für den Zugriff auf den Cache.
-        encoding (str, optional): Encoding für Textdateien.
-        hash_algorithm (Optional[str], optional): Hash-Algorithmus oder None.
-
-    Returns:
-        Tuple[str, Optional[Dict[str, Any]]]: Dateiname und Datei-Info oder None.
-    """
     filename = file_path.name
 
-    # Prüfe den Cache nur, wenn Hashing aktiviert ist
+    try:
+        stat = file_path.stat()
+        current_size = stat.st_size
+        current_mtime = stat.st_mtime
+    except Exception as e:
+        logging.warning(
+            f"{Fore.YELLOW}Konnte Metadaten nicht abrufen: {file_path} - {e}{Style.RESET_ALL}"
+        )
+        return filename, None
+
+    file_hash = None
+    cached_info = None
+
     if hash_algorithm is not None:
-        file_hash = compute_file_hash(file_path, algorithm=hash_algorithm)
-        cached_entry = None
-        if file_hash is not None:
-            with lock:
-                cached_entry = get_cached_entry(conn, str(file_path.resolve()))
+        with lock:
+            cached_entry = get_cached_entry(conn, str(file_path.resolve()))
         
-        if (file_hash is not None and cached_entry 
-            and cached_entry[0] == file_hash 
-            and cached_entry[1] == hash_algorithm):
-            logging.debug(
-                f"{Fore.BLUE}Cache-Treffer für Datei: {file_path}{Style.RESET_ALL}"
-            )
-            # Lade file_info aus cached_entry
-            try:
-                cached_file_info = json.loads(cached_entry[2])
-                return filename, cached_file_info
-            except json.JSONDecodeError as e:
-                logging.warning(
-                    f"{Fore.YELLOW}Fehler beim Dekodieren der gecachten Dateiinfo für "
-                    f"{file_path}: {e}{Style.RESET_ALL}"
+        if cached_entry:
+            cached_hash, cached_algorithm, cached_info_json, cached_size, cached_mtime = cached_entry
+            if (cached_size == current_size and
+                cached_mtime == current_mtime and
+                cached_algorithm == hash_algorithm):
+                try:
+                    cached_info = json.loads(cached_info_json)
+                    logging.debug(
+                        f"{Fore.BLUE}Cache-Treffer für Datei: {file_path}{Style.RESET_ALL}"
+                    )
+                    return filename, cached_info
+                except json.JSONDecodeError as e:
+                    logging.warning(
+                        f"{Fore.YELLOW}Fehler beim Dekodieren der gecachten Dateiinfo für {file_path}: {e}{Style.RESET_ALL}"
+                    )
+            else:
+                logging.debug(
+                    f"{Fore.GREEN}Datei geändert seit letztem Cache-Eintrag: {file_path}{Style.RESET_ALL}"
                 )
-                # Weiter zur erneuten Verarbeitung der Datei
+        else:
+            logging.debug(
+                f"{Fore.GREEN}Kein Cache-Eintrag für Datei: {file_path}{Style.RESET_ALL}"
+            )
+
+        # Nur wenn kein gültiger Cache-Treffer vorliegt, den Hash berechnen
+        file_hash = compute_file_hash(file_path, algorithm=hash_algorithm)
 
     file_extension = file_path.suffix.lower()
 
@@ -86,7 +89,13 @@ def process_file(
     file_info: Dict[str, Any] = {}
 
     try:
-        if binary:
+        if is_binary(file_path):
+            if not include_binary and not (file_path.suffix.lower() in image_extensions):
+                logging.debug(
+                    f"{Fore.YELLOW}Ausschließen von binärer Datei: {file_path}{Style.RESET_ALL}"
+                )
+                return filename, None
+
             with open(file_path, 'rb') as f:
                 content = base64.b64encode(f.read()).decode('utf-8')
             file_info = {
@@ -97,12 +106,10 @@ def process_file(
                 f"{Fore.GREEN}Eingeschlossene binäre Datei: {file_path}{Style.RESET_ALL}"
             )
         else:
-            stat = file_path.stat()
             if stat.st_size > max_file_size:
                 content = "<Datei zu groß zum Lesen>"
                 logging.info(
-                    f"{Fore.YELLOW}Datei zu groß: {file_path} "
-                    f"({stat.st_size} Bytes){Style.RESET_ALL}"
+                    f"{Fore.YELLOW}Datei zu groß: {file_path} ({stat.st_size} Bytes){Style.RESET_ALL}"
                 )
             else:
                 with open(file_path, 'r', encoding=encoding) as f:
@@ -116,8 +123,7 @@ def process_file(
             }
     except UnicodeDecodeError as e:
         logging.warning(
-            f"{Fore.YELLOW}UnicodeDecodeError bei Datei {file_path}: "
-            f"{e}{Style.RESET_ALL}"
+            f"{Fore.YELLOW}UnicodeDecodeError bei Datei {file_path}: {e}{Style.RESET_ALL}"
         )
         file_info = {
             "type": "unknown",
@@ -129,8 +135,7 @@ def process_file(
             "content": f"<Konnte den Inhalt nicht lesen: {str(e)}>"
         }
         logging.warning(
-            f"{Fore.YELLOW}Konnte den Inhalt nicht lesen: {file_path} - "
-            f"{e}{Style.RESET_ALL}"
+            f"{Fore.YELLOW}Konnte den Inhalt nicht lesen: {file_path} - {e}{Style.RESET_ALL}"
         )
     except Exception as e:
         file_info = {
@@ -138,28 +143,33 @@ def process_file(
             "content": f"<Fehler: {str(e)}>"
         }
         logging.error(
-            f"{Fore.RED}Fehler beim Verarbeiten der Datei {file_path}: "
-            f"{e}{Style.RESET_ALL}"
+            f"{Fore.RED}Fehler beim Verarbeiten der Datei {file_path}: {e}{Style.RESET_ALL}"
         )
 
     # Füge Metadaten hinzu
     try:
-        stat = file_path.stat()
         file_info.update({
-            "size": stat.st_size,
+            "size": current_size,
             "created": stat.st_ctime,
-            "modified": stat.st_mtime,
+            "modified": current_mtime,
             "permissions": oct(stat.st_mode)
         })
     except Exception as e:
         logging.warning(
-            f"{Fore.YELLOW}Konnte Metadaten nicht abrufen für: {file_path} - "
-            f"{e}{Style.RESET_ALL}"
+            f"{Fore.YELLOW}Konnte Metadaten nicht abrufen für: {file_path} - {e}{Style.RESET_ALL}"
         )
 
-    # Aktualisiere den Cache nur, wenn Hashing aktiviert ist
+    # Aktualisiere den Cache nur, wenn Hashing aktiviert ist und Hash berechnet wurde
     if hash_algorithm is not None and file_hash is not None:
         with lock:
-            set_cached_entry(conn, str(file_path.resolve()), file_hash, hash_algorithm, file_info)
+            set_cached_entry(
+                conn,
+                str(file_path.resolve()),
+                file_hash,
+                hash_algorithm,
+                file_info,
+                current_size,
+                current_mtime
+            )
 
     return filename, file_info

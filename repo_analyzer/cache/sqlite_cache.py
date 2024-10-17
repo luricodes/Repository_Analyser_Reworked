@@ -22,7 +22,9 @@ def initialize_db(db_path: str) -> sqlite3.Connection:
                 file_path TEXT PRIMARY KEY,
                 file_hash TEXT,
                 hash_algorithm TEXT,
-                file_info TEXT
+                file_info TEXT,
+                size INTEGER,
+                mtime REAL
             )
             """
         )
@@ -30,21 +32,22 @@ def initialize_db(db_path: str) -> sqlite3.Connection:
 
 def get_cached_entry(
     conn: sqlite3.Connection, file_path: str
-) -> Optional[Tuple[Optional[str], Optional[str], str]]:
+) -> Optional[Tuple[Optional[str], Optional[str], str, Optional[int], Optional[float]]]:
     """
-    Ruft den gespeicherten Hash, Hash-Algorithmus und file_info für eine Datei aus dem Cache ab.
+    Ruft den gespeicherten Hash, Hash-Algorithmus, file_info, size und mtime für eine Datei aus dem Cache ab.
 
     Args:
         conn (sqlite3.Connection): Die SQLite-Verbindung.
         file_path (str): Der Pfad zur Datei.
 
     Returns:
-        Optional[Tuple[Optional[str], Optional[str], str]]: Tuple bestehend aus file_hash, hash_algorithm und file_info.
-        Oder None, wenn kein Eintrag gefunden wurde.
+        Optional[Tuple[Optional[str], Optional[str], str, Optional[int], Optional[float]]]: 
+            Tuple bestehend aus file_hash, hash_algorithm, file_info_json, size und mtime.
+            Oder None, wenn kein Eintrag gefunden wurde.
     """
     with conn:
         cursor = conn.execute(
-            "SELECT file_hash, hash_algorithm, file_info FROM cache WHERE file_path = ?",
+            "SELECT file_hash, hash_algorithm, file_info, size, mtime FROM cache WHERE file_path = ?",
             (file_path,),
         )
         result = cursor.fetchone()
@@ -56,9 +59,11 @@ def set_cached_entry(
     file_hash: Optional[str],
     hash_algorithm: Optional[str],
     file_info: Dict[str, Any],
+    size: int,
+    mtime: float,
 ) -> None:
     """
-    Aktualisiert oder fügt den Hash, Hash-Algorithmus und file_info einer Datei im Cache hinzu.
+    Aktualisiert oder fügt den Hash, Hash-Algorithmus, file_info, size und mtime einer Datei im Cache hinzu.
 
     Args:
         conn (sqlite3.Connection): Die SQLite-Verbindung.
@@ -66,19 +71,23 @@ def set_cached_entry(
         file_hash (Optional[str]): Der Hash der Datei oder None.
         hash_algorithm (Optional[str]): Der Hash-Algorithmus oder None.
         file_info (Dict[str, Any]): Die Informationen zur Datei.
+        size (int): Die Größe der Datei in Bytes.
+        mtime (float): Die letzte Änderungszeit der Datei.
     """
     file_info_json = json.dumps(file_info)
     with conn:
         conn.execute(
             """
-            INSERT INTO cache (file_path, file_hash, hash_algorithm, file_info)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO cache (file_path, file_hash, hash_algorithm, file_info, size, mtime)
+            VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(file_path) DO UPDATE SET
                 file_hash = excluded.file_hash,
                 hash_algorithm = excluded.hash_algorithm,
-                file_info = excluded.file_info
+                file_info = excluded.file_info,
+                size = excluded.size,
+                mtime = excluded.mtime
             """,
-            (file_path, file_hash, hash_algorithm, file_info_json),
+            (file_path, file_hash, hash_algorithm, file_info_json, size, mtime),
         )
 
 def clean_cache(

@@ -19,6 +19,7 @@ DEFAULT_EXCLUDED_FOLDERS = {
     'logs',
     'assets',
     'bower_components',
+    #'.next'
 }
 
 DEFAULT_EXCLUDED_FILES = {
