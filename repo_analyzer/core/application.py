@@ -14,7 +14,7 @@ from repo_analyzer.config.defaults import (
     DEFAULT_EXCLUDED_FOLDERS,
     DEFAULT_EXCLUDED_FILES,
 )
-from repo_analyzer.config.loader import load_config
+from repo_analyzer.config.config import Config
 from repo_analyzer.core.summary import create_summary
 from repo_analyzer.logging.setup import setup_logging
 from repo_analyzer.output.output_factory import OutputFactory
@@ -30,15 +30,16 @@ def run() -> None:
     """
     args = parse_arguments()
 
-    # Lade die Konfigurationsdatei, falls angegeben
-    config = load_config(args.config)
+    # Initialisiere die Konfigurationsverwaltung
+    config_manager = Config()
+    config_manager.load(args.config)
+    config = config_manager.data
 
     # Setup Logging mit Verbosity und optionalem Logfile
     setup_logging(args.verbose, args.log_file)
 
     root_directory: Path = Path(args.root_directory).resolve()
     output_file: str = args.output
-    max_file_size: int = args.max_size
     include_binary: bool = args.include_binary
     additional_excluded_folders: Set[str] = set(args.exclude_folders)
     additional_excluded_files: Set[str] = set(args.exclude_files)
@@ -65,6 +66,20 @@ def run() -> None:
     if threads is None:
         threads = multiprocessing.cpu_count() * 2
         logging.info(f"Dynamisch festgelegte Anzahl der Threads: {threads}")
+
+    # Bestimmung der max_file_size mit Priorität: CLI-Argument > Config-Datei > Default
+    try:
+        if args.max_size is not None:
+            # Konvertierung von MB zu Bytes
+            max_file_size = args.max_size * 1024 * 1024
+        else:
+            max_file_size = None  # Wird in get_max_size() behandelt
+
+        max_file_size = config_manager.get_max_size(max_file_size)
+        logging.info(f"Maximale Dateigröße zum Lesen: {max_file_size /1024 /1024} MB")
+    except ValueError as ve:
+        logging.error(f"Fehler bei der Bestimmung der maximalen Dateigröße: {ve}")
+        sys.exit(1)
 
     # Kombiniere die standardmäßigen und zusätzlichen Ausschlüsse aus Argumenten und Konfigurationsdatei
     config_excluded_folders: Set[str] = set(config.get('exclude_folders', []))
@@ -100,7 +115,6 @@ def run() -> None:
         logging.info("Binäre Dateien und Bilddateien sind ausgeschlossen.")
     else:
         logging.info("Binäre Dateien und Bilddateien werden einbezogen.")
-    logging.info(f"Maximale Dateigröße zum Lesen: {max_file_size} Bytes")
     logging.info(f"Ausgabe in: {output_file} ({output_format})")
     logging.info(
         f"Symbolische Links werden {'gefolgt' if follow_symlinks else 'nicht gefolgt'}"
@@ -123,7 +137,7 @@ def run() -> None:
     try:
         structure, summary = get_directory_structure(
             root_dir=root_directory,
-            max_file_size=max_file_size,
+            max_file_size=max_file_size,  # Geänderte Variable
             include_binary=include_binary,
             excluded_folders=excluded_folders,
             excluded_files=excluded_files,
@@ -166,7 +180,11 @@ def run() -> None:
         sys.exit(1)
 
     # Erstelle die Zusammenfassung
-    output_data: Dict[str, Any] = create_summary(structure, summary, include_summary, hash_algorithm)
+    try:
+        output_data: Dict[str, Any] = create_summary(structure, summary, include_summary, hash_algorithm)
+    except Exception as e:
+        logging.error(f"Fehler beim Erstellen der Zusammenfassung: {e}")
+        output_data = structure  # Fallback ohne Zusammenfassung
 
     # Schreibe die Struktur (und ggf. die Zusammenfassung) in die Ausgabedatei
     try:

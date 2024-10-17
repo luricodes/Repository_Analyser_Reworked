@@ -18,12 +18,14 @@ def parse_arguments():
             "Listet ein Repository in einer JSON-, YAML- oder XML-Datei auf."
         ),
         epilog=(
-            "Beispiele:\n"
-            "  python script.py /path/to/repo -o output.json\n"
-            "  python script.py --exclude-folders build dist --include-binary --format yaml\n"
+            "Beispiele:\\n"
+            "  repo_analyzer /pfad/zum/repo -o output.json\\n"
+            "  repo_analyzer --exclude-folders build dist --include-binary --format yaml\\n"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    
+    # Wurzelverzeichnis
     parser.add_argument(
         "root_directory",
         nargs="?",
@@ -33,22 +35,28 @@ def parse_arguments():
             "(Standard: aktuelles Verzeichnis)."
         ),
     )
+    
+    # Ausgabedatei
     parser.add_argument(
         "-o",
         "--output",
         default="repository_structure.json",
         help="Name der Ausgabedatei (Standard: repository_structure.json).",
     )
+    
+    # Maximalgröße der Dateien
     parser.add_argument(
         "-m",
         "--max-size",
         type=int,
-        default=DEFAULT_MAX_FILE_SIZE,
+        default=None,
         help=(
-            f"Maximale Dateigröße in Bytes, bis zu der der Inhalt gelesen wird "
-            f"(Standard: {DEFAULT_MAX_FILE_SIZE} Bytes)."
+            f"Maximale Dateigröße in MB, bis zu der der Inhalt gelesen wird "
+            f"(Standard: {DEFAULT_MAX_FILE_SIZE // (1024 * 1024)} MB aus defaults.py)."
         ),
     )
+    
+    #Weitere Argumente
     parser.add_argument(
         "--include-binary",
         action="store_true",

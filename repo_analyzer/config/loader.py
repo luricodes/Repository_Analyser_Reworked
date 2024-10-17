@@ -1,15 +1,11 @@
-"""
-Modul zur Konfigurationsdatei-Ladung (YAML oder JSON) im Repo Analyzer.
-"""
+# repo_analyzer/config/loader.py
 
-import json
-import logging
 from typing import Optional, Dict, Any
 from pathlib import Path
-
+import json
 import yaml
+import logging
 from colorama import Fore, Style
-
 
 def load_config(config_path: Optional[str]) -> Dict[str, Any]:
     """
@@ -35,9 +31,9 @@ def load_config(config_path: Optional[str]) -> Dict[str, Any]:
         with config_file.open('r', encoding='utf-8') as file:
             file_suffix = config_file.suffix.lower()
             if file_suffix in ('.yaml', '.yml'):
-                return yaml.safe_load(file) or {}
+                config = yaml.safe_load(file) or {}
             elif file_suffix == '.json':
-                return json.load(file)
+                config = json.load(file)
             else:
                 logging.error(
                     f"{Fore.RED}Unbekanntes Konfigurationsdateiformat: {config_path}{Style.RESET_ALL}"
@@ -58,3 +54,14 @@ def load_config(config_path: Optional[str]) -> Dict[str, Any]:
             f"{Fore.RED}Unerwarteter Fehler beim Laden der Konfigurationsdatei: {e}{Style.RESET_ALL}"
         )
         return {}
+
+    # Validierung des max_size Parameters
+    max_size = config.get('max_size')
+    if max_size is not None:
+        if not isinstance(max_size, int) or max_size <= 0:
+            logging.error(
+                f"{Fore.RED}Ungültiger Wert für 'max_size' in der Konfigurationsdatei: {max_size}{Style.RESET_ALL}"
+            )
+            config.pop('max_size')  # Entfernen ungültiger Werte
+
+    return config
