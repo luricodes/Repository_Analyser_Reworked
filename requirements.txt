@@ -2,4 +2,4 @@ colorama
 dicttoxml
 PyYAML
 tqdm
-python-magic
+python-magic-bin

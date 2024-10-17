@@ -8,7 +8,6 @@ from typing import List, Pattern, Sequence
 
 from colorama import Fore, Style
 
-
 @lru_cache(maxsize=None)
 def compile_regex(pattern: str) -> Pattern:
     """
@@ -21,7 +20,6 @@ def compile_regex(pattern: str) -> Pattern:
         Pattern: Das kompilierte Regex-Muster.
     """
     return re.compile(pattern)
-
 
 def matches_patterns(filename: str, patterns: Sequence[str]) -> bool:
     """

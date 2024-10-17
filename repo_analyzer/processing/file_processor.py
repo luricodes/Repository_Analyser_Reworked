@@ -75,21 +75,21 @@ def process_file(
     # Prüfe, ob die Datei eine Bilddatei ist
     is_image = file_extension in image_extensions
 
-    # Prüfe, ob die Datei binär ist
-    binary = is_binary(file_path)
-
-    # Wenn die Datei binär oder ein Bild ist und include_binary nicht gesetzt ist, überspringen
-    if (binary or is_image) and not include_binary:
-        logging.debug(
-            f"{Fore.YELLOW}Ausschließen von {'binär' if binary else 'Bild'} "
-            f"Datei: {file_path}{Style.RESET_ALL}"
-        )
-        return filename, None  # Rückgabe von None signalisiert, dass die Datei übersprungen wird
-
-    file_info: Dict[str, Any] = {}
-
     try:
-        if is_binary(file_path):
+        # Prüfe, ob die Datei binär ist
+        binary = is_binary(file_path)
+
+        # Wenn die Datei binär oder ein Bild ist und include_binary nicht gesetzt ist, überspringen
+        if (binary or is_image) and not include_binary:
+            logging.debug(
+                f"{Fore.YELLOW}Ausschließen von {'binär' if binary else 'Bild'} "
+                f"Datei: {file_path}{Style.RESET_ALL}"
+            )
+            return filename, None  # Rückgabe von None signalisiert, dass die Datei übersprungen wird
+
+        file_info: Dict[str, Any] = {}
+
+        if binary:
             if not include_binary and not (file_path.suffix.lower() in image_extensions):
                 logging.debug(
                     f"{Fore.YELLOW}Ausschließen von binärer Datei: {file_path}{Style.RESET_ALL}"
@@ -97,7 +97,7 @@ def process_file(
                 return filename, None
 
             with open(file_path, 'rb') as f:
-                content = base64.b64encode(f.read()).decode('utf-8')
+                content = base64.b64encode(f.read(max_file_size)).decode('utf-8')
             file_info = {
                 "type": "binary",
                 "content": content
@@ -113,7 +113,7 @@ def process_file(
                 )
             else:
                 with open(file_path, 'r', encoding=encoding) as f:
-                    content = f.read()
+                    content = f.read(max_file_size)
                 logging.debug(
                     f"{Fore.GREEN}Eingelesene Textdatei: {file_path}{Style.RESET_ALL}"
                 )
