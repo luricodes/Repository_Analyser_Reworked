@@ -36,6 +36,13 @@ def process_file(
         )
         return filename, None
 
+    # **Überprüfung der Dateigröße**
+    if current_size > max_file_size:
+        logging.info(
+            f"{Fore.YELLOW}Datei zu groß und wird ausgeschlossen: {file_path} ({current_size} Bytes){Style.RESET_ALL}"
+        )
+        return filename, None  # Datei wird ausgeschlossen
+
     file_hash = None
     cached_info = None
 
@@ -82,20 +89,14 @@ def process_file(
         # Wenn die Datei binär oder ein Bild ist und include_binary nicht gesetzt ist, überspringen
         if (binary or is_image) and not include_binary:
             logging.debug(
-                f"{Fore.YELLOW}Ausschließen von {'binär' if binary else 'Bild'} "
-                f"Datei: {file_path}{Style.RESET_ALL}"
+                f"{Fore.YELLOW}Ausschließen von {'binär' if binary else 'Bild'} Datei: {file_path}{Style.RESET_ALL}"
             )
-            return filename, None  # Rückgabe von None signalisiert, dass die Datei übersprungen wird
+            return filename, None  # Datei wird ausgeschlossen
 
         file_info: Dict[str, Any] = {}
 
         if binary:
-            if not include_binary and not (file_path.suffix.lower() in image_extensions):
-                logging.debug(
-                    f"{Fore.YELLOW}Ausschließen von binärer Datei: {file_path}{Style.RESET_ALL}"
-                )
-                return filename, None
-
+            # Verarbeitung binärer Dateien
             with open(file_path, 'rb') as f:
                 content = base64.b64encode(f.read(max_file_size)).decode('utf-8')
             file_info = {
@@ -106,17 +107,12 @@ def process_file(
                 f"{Fore.GREEN}Eingeschlossene binäre Datei: {file_path}{Style.RESET_ALL}"
             )
         else:
-            if stat.st_size > max_file_size:
-                content = "<Datei zu groß zum Lesen>"
-                logging.info(
-                    f"{Fore.YELLOW}Datei zu groß: {file_path} ({stat.st_size} Bytes){Style.RESET_ALL}"
-                )
-            else:
-                with open(file_path, 'r', encoding=encoding) as f:
-                    content = f.read(max_file_size)
-                logging.debug(
-                    f"{Fore.GREEN}Eingelesene Textdatei: {file_path}{Style.RESET_ALL}"
-                )
+            # Verarbeitung von Textdateien
+            with open(file_path, 'r', encoding=encoding) as f:
+                content = f.read(max_file_size)
+            logging.debug(
+                f"{Fore.GREEN}Eingelesene Textdatei: {file_path}{Style.RESET_ALL}"
+            )
             file_info = {
                 "type": "text",
                 "content": content
@@ -125,32 +121,23 @@ def process_file(
         logging.warning(
             f"{Fore.YELLOW}UnicodeDecodeError bei Datei {file_path}: {e}{Style.RESET_ALL}"
         )
-        file_info = {
-            "type": "unknown",
-            "content": f"<UnicodeDecodeError: {str(e)}>"
-        }
+        return filename, None
     except (PermissionError, IsADirectoryError) as e:
-        file_info = {
-            "type": "unknown",
-            "content": f"<Konnte den Inhalt nicht lesen: {str(e)}>"
-        }
         logging.warning(
             f"{Fore.YELLOW}Konnte den Inhalt nicht lesen: {file_path} - {e}{Style.RESET_ALL}"
         )
+        return filename, None
     except Exception as e:
-        file_info = {
-            "type": "error",
-            "content": f"<Fehler: {str(e)}>"
-        }
         logging.error(
             f"{Fore.RED}Fehler beim Verarbeiten der Datei {file_path}: {e}{Style.RESET_ALL}"
         )
+        return filename, None
 
     # Füge Metadaten hinzu
     try:
         file_info.update({
             "size": current_size,
-            "created": stat.st_ctime,
+            "created": stat.st_birthtime,
             "modified": current_mtime,
             "permissions": oct(stat.st_mode)
         })
