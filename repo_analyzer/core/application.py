@@ -5,7 +5,7 @@ import multiprocessing
 import sys
 import threading
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional, Set, Tuple, List
 
 from repo_analyzer.cache.sqlite_cache import clean_cache, initialize_db
 from repo_analyzer.cli.parser import parse_arguments
@@ -37,22 +37,22 @@ def run() -> None:
     # Setup Logging mit Verbosity und optionalem Logfile
     setup_logging(args.verbose, args.log_file)
 
-    root_directory = Path(args.root_directory).resolve()
-    output_file = args.output
-    max_file_size = args.max_size
-    include_binary = args.include_binary
-    additional_excluded_folders = set(args.exclude_folders)
-    additional_excluded_files = set(args.exclude_files)
-    follow_symlinks = args.follow_symlinks
-    additional_image_extensions = {
+    root_directory: Path = Path(args.root_directory).resolve()
+    output_file: str = args.output
+    max_file_size: int = args.max_size
+    include_binary: bool = args.include_binary
+    additional_excluded_folders: Set[str] = set(args.exclude_folders)
+    additional_excluded_files: Set[str] = set(args.exclude_files)
+    follow_symlinks: bool = args.follow_symlinks
+    additional_image_extensions: Set[str] = {
         ext.lower() if ext.startswith('.') else f'.{ext.lower()}'
         for ext in args.image_extensions
     }
-    include_summary = args.include_summary  # Neue Option
-    output_format = args.format
-    threads = args.threads
-    exclude_patterns = args.exclude_patterns
-    encoding = args.encoding  # Neues Argument
+    include_summary: bool = args.include_summary  # Neue Option
+    output_format: str = args.format
+    threads: Optional[int] = args.threads
+    exclude_patterns: List[str] = args.exclude_patterns
+    encoding: str = args.encoding  # Neues Argument
 
     # Dynamische Bestimmung der Thread-Anzahl, falls nicht angegeben
     if threads is None:
@@ -60,22 +60,22 @@ def run() -> None:
         logging.info(f"Dynamisch festgelegte Anzahl der Threads: {threads}")
 
     # Kombiniere die standardmäßigen und zusätzlichen Ausschlüsse aus Argumenten und Konfigurationsdatei
-    config_excluded_folders = set(config.get('exclude_folders', []))
-    config_excluded_files = set(config.get('exclude_files', []))
-    config_exclude_patterns = config.get('exclude_patterns', [])
+    config_excluded_folders: Set[str] = set(config.get('exclude_folders', []))
+    config_excluded_files: Set[str] = set(config.get('exclude_files', []))
+    config_exclude_patterns: List[str] = config.get('exclude_patterns', [])
 
-    excluded_folders = (
+    excluded_folders: Set[str] = (
         DEFAULT_EXCLUDED_FOLDERS
         .union(additional_excluded_folders, config_excluded_folders)
     )
-    excluded_files = (
+    excluded_files: Set[str] = (
         set(DEFAULT_EXCLUDED_FILES)
         .union(additional_excluded_files, config_excluded_files)
     )
-    exclude_patterns = exclude_patterns + config_exclude_patterns
+    exclude_patterns: List[str] = exclude_patterns + config_exclude_patterns
 
     # Kombiniere die standardmäßigen und zusätzlichen Bilddateiendungen
-    image_extensions = {
+    image_extensions: Set[str] = {
         '.png',
         '.jpg',
         '.jpeg',
@@ -104,11 +104,11 @@ def run() -> None:
     logging.info(f"Standard-Encoding: {encoding}")
 
     # Initialisiere den SQLite-Cache
-    cache_db_path = root_directory / CACHE_DB_FILE
+    cache_db_path: Path = root_directory / CACHE_DB_FILE
     conn = initialize_db(str(cache_db_path))
 
     # Lock für den Cache
-    cache_lock = threading.Lock()
+    cache_lock: threading.Lock = threading.Lock()
 
     # Bereinige den Cache
     clean_cache(conn, root_directory, cache_lock)
@@ -158,7 +158,7 @@ def run() -> None:
         sys.exit(1)
 
     # Erstelle die Zusammenfassung
-    output_data = create_summary(structure, summary, include_summary)
+    output_data: Dict[str, Any] = create_summary(structure, summary, include_summary)
 
     # Schreibe die Struktur (und ggf. die Zusammenfassung) in die Ausgabedatei
     try:
