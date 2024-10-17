@@ -20,7 +20,7 @@ def compute_file_hash(file_path: Path, algorithm: Optional[str] = "md5") -> Opti
     """
     if algorithm is None:
         return None
-
+    algorithm = algorithm.lower()
     try:
         hasher = hashlib.new(algorithm)
     except ValueError:

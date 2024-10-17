@@ -26,7 +26,7 @@ pip install -e .
   **Beispiel:**
 
   ```bash
-  repo_analyzer /pfad/zum/repo --hash-algorithm sha256 -o ausgabe.json
+  repo_analyzer /pfad/zum/repo --hash-algorithm sha256 --max-size 50 -o ausgabe.json
 
 ### Vollständige CLI-Optionen
 usage: repo_analyzer [-h] [-o OUTPUT] [-m MAX_SIZE] [--include-binary]
