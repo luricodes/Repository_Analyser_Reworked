@@ -1,13 +1,12 @@
 # repo_analyzer/cli/parser.py
 
-"""
-Dieses Modul enthält die Funktion zur Argumentenparsing für das Repository-Analyse-Tool.
-"""
-
 import argparse
+import os
+from pathlib import Path
 
-from ..config.defaults import DEFAULT_MAX_FILE_SIZE
-
+def get_default_cache_path() -> str:
+    home = Path.home()
+    return str(home / "Documents" / "Datenbank") if os.name == 'nt' else str(home / ".repo_analyzer" / "cache")
 
 def parse_arguments():
     """
@@ -52,11 +51,11 @@ def parse_arguments():
         default=None,
         help=(
             f"Maximale Dateigröße in MB, bis zu der der Inhalt gelesen wird "
-            f"(Standard: {DEFAULT_MAX_FILE_SIZE // (1024 * 1024)} MB aus defaults.py)."
+            f"(Standard: {50} MB)."
         ),
     )
     
-    #Weitere Argumente
+    # Weitere Argumente
     parser.add_argument(
         "--include-binary",
         action="store_true",
@@ -168,6 +167,16 @@ def parse_arguments():
         "--no-hash",
         action="store_true",
         help="Deaktiviert die Hash-Verifizierung und arbeitet ohne Hash.",
+    )
+    # Neue Option für den Cache-Pfad
+    parser.add_argument(
+        "--cache-path",
+        type=str,
+        default=get_default_cache_path(),
+        help=(
+            f"Pfad zum Speicherort des Cache-Eintrags "
+            f"(Standard: {get_default_cache_path()})."
+        ),
     )
 
     args = parser.parse_args()

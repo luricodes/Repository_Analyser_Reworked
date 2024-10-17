@@ -5,10 +5,11 @@ import multiprocessing
 import sys
 import threading
 from pathlib import Path
-from typing import Any, Dict, Optional, Set, Tuple, List
+from typing import Any, Dict, Optional, Set, List
+import os
 
-from repo_analyzer.cache.sqlite_cache import clean_cache, initialize_db
-from repo_analyzer.cli.parser import parse_arguments
+from repo_analyzer.cache.sqlite_cache import clean_cache, initialize_db, get_db_connection
+from repo_analyzer.cli.parser import parse_arguments, get_default_cache_path
 from repo_analyzer.config.defaults import (
     CACHE_DB_FILE,
     DEFAULT_EXCLUDED_FOLDERS,
@@ -19,6 +20,28 @@ from repo_analyzer.core.summary import create_summary
 from repo_analyzer.logging.setup import setup_logging
 from repo_analyzer.output.output_factory import OutputFactory
 from repo_analyzer.traversal.traverser import get_directory_structure
+
+def initialize_cache_directory(cache_path: str) -> Path:
+    """
+    Initialisiert das Cache-Verzeichnis.
+
+    Args:
+        cache_path (str): Der vom Benutzer angegebene Pfad oder der Standardpfad.
+
+    Returns:
+        Path: Der Pfad zum Cache-Verzeichnis.
+
+    Raises:
+        SystemExit: Wenn das Verzeichnis nicht erstellt werden kann.
+    """
+    cache_dir = Path(cache_path).expanduser().resolve()
+    try:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        logging.debug(f"Cache-Verzeichnis erstellt oder existiert bereits: {cache_dir}")
+    except Exception as e:
+        logging.error(f"Fehler beim Erstellen des Cache-Verzeichnisses '{cache_dir}': {e}")
+        sys.exit(1)
+    return cache_dir
 
 def run() -> None:
     """
@@ -53,6 +76,7 @@ def run() -> None:
     threads: Optional[int] = args.threads
     exclude_patterns: List[str] = args.exclude_patterns
     encoding: str = args.encoding  # Neues Argument
+    cache_path: str = args.cache_path  # Neuer Parameter
 
     # Bestimmung des Hash-Algorithmus oder Deaktivierung
     if args.no_hash:
@@ -76,7 +100,7 @@ def run() -> None:
             max_file_size = None  # Wird in get_max_size() behandelt
 
         max_file_size = config_manager.get_max_size(max_file_size)
-        logging.info(f"Maximale Dateigröße zum Lesen: {max_file_size /1024 /1024} MB")
+        logging.info(f"Maximale Dateigröße zum Lesen: {max_file_size / (1024 * 1024)} MB")
     except ValueError as ve:
         logging.error(f"Fehler bei der Bestimmung der maximalen Dateigröße: {ve}")
         sys.exit(1)
@@ -123,16 +147,22 @@ def run() -> None:
     logging.info(f"Ausschlussmuster: {', '.join(exclude_patterns)}")
     logging.info(f"Anzahl der Threads: {threads}")
     logging.info(f"Standard-Encoding: {encoding}")
+    logging.info(f"Cache-Pfad: {cache_path}")  # Logge den Cache-Pfad
 
-    # Initialisiere den SQLite-Cache
-    cache_db_path: Path = root_directory / CACHE_DB_FILE
-    conn = initialize_db(str(cache_db_path))
+    # Initialisiere das Cache-Verzeichnis
+    cache_dir: Path = initialize_cache_directory(cache_path)
+    cache_db_path: Path = cache_dir / CACHE_DB_FILE
+    db_path_str = str(cache_db_path)
+    initialize_db(db_path_str)
+
+    # Bereinige den Cache
+    clean_cache(db_path_str, root_directory)
+
+    # Erhalte die Datenbankverbindung
+    conn = get_db_connection(db_path_str)
 
     # Lock für den Cache
     cache_lock: threading.Lock = threading.Lock()
-
-    # Bereinige den Cache
-    clean_cache(conn, root_directory, cache_lock)
 
     try:
         structure, summary = get_directory_structure(
