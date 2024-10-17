@@ -4,7 +4,7 @@ import fnmatch
 import logging
 import re
 from functools import lru_cache
-from typing import List, Pattern
+from typing import List, Pattern, Sequence
 
 from colorama import Fore, Style
 
@@ -23,22 +23,22 @@ def compile_regex(pattern: str) -> Pattern:
     return re.compile(pattern)
 
 
-def matches_patterns(filename: str, patterns: List[str]) -> bool:
+def matches_patterns(filename: str, patterns: Sequence[str]) -> bool:
     """
     Prüft, ob der Dateiname einem der Muster entspricht (Glob oder Regex).
 
     Args:
         filename (str): Der Name der Datei.
-        patterns (List[str]): Eine Liste von Mustern (Glob oder Regex).
+        patterns (Sequence[str]): Eine Sequenz von Mustern (Glob oder Regex).
 
     Returns:
         bool: True, wenn der Dateiname einem der Muster entspricht, sonst False.
     """
     for pattern in patterns:
         if pattern.startswith('regex:'):
-            regex = pattern[len('regex:'):]
+            regex: str = pattern[len('regex:'):]
             try:
-                compiled = compile_regex(regex)
+                compiled: Pattern = compile_regex(regex)
                 if compiled.match(filename):
                     return True
             except re.error as e:
