@@ -4,7 +4,7 @@ import logging
 import sqlite3
 import threading
 from pathlib import Path
-from typing import Any, Dict, List, Set, Tuple
+from typing import Any, Dict, List, Set, Tuple, Optional
 
 from colorama import Fore, Style
 from concurrent.futures import ThreadPoolExecutor, as_completed, Future
@@ -12,7 +12,6 @@ from tqdm import tqdm
 
 from repo_analyzer.processing.file_processor import process_file
 from repo_analyzer.traversal.patterns import matches_patterns
-
 
 def recursive_traverse(
     root_dir: Path,
@@ -87,7 +86,6 @@ def recursive_traverse(
     _traverse(root_dir)
     return paths
 
-
 def count_total_files(
     root_dir: Path,
     excluded_folders: Set[str],
@@ -161,7 +159,6 @@ def count_total_files(
     _traverse_count(root_dir)
     return included, excluded
 
-
 def get_directory_structure(
     root_dir: Path,
     max_file_size: int,
@@ -174,7 +171,8 @@ def get_directory_structure(
     conn: sqlite3.Connection,
     lock: threading.Lock,
     threads: int,
-    encoding: str = 'utf-8'
+    encoding: str = 'utf-8',
+    hash_algorithm: Optional[str] = "md5",  # Neuer Parameter
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """
     Erstellt die Verzeichnisstruktur als verschachteltes Dictionary.
@@ -192,6 +190,7 @@ def get_directory_structure(
         lock (threading.Lock): Ein Threading-Lock zur Synchronisation.
         threads (int): Anzahl der Threads für die parallele Verarbeitung.
         encoding (str, optional): Die Zeichenkodierung für die Verarbeitung. Standard ist 'utf-8'.
+        hash_algorithm (Optional[str], optional): Der Hash-Algorithmus oder None.
 
     Returns:
         Tuple[Dict[str, Any], Dict[str, Any]]: Ein Tupel bestehend aus der Verzeichnisstruktur und einer Zusammenfassung.
@@ -250,7 +249,8 @@ def get_directory_structure(
                     image_extensions,
                     conn,
                     lock,
-                    encoding=encoding
+                    encoding=encoding,
+                    hash_algorithm=hash_algorithm,  # Neuer Parameter
                 )
                 future_to_file[future] = file_path.parent
         except KeyboardInterrupt:
@@ -339,6 +339,10 @@ def get_directory_structure(
         "failed_files": failed_files  # Neue Liste für fehlgeschlagene Dateien
     }
 
+    # Füge den verwendeten Hash-Algorithmus zur Zusammenfassung hinzu, wenn verwendet
+    if hash_algorithm is not None:
+        summary["hash_algorithm"] = hash_algorithm
+
     # Logge eine Zusammenfassung der verarbeiteten und ausgeschlossenen Dateien
     logging.info(f"{Fore.CYAN}Zusammenfassung:{Style.RESET_ALL}")
     logging.info(
@@ -351,5 +355,9 @@ def get_directory_structure(
     logging.info(
         f"  {Fore.RED}Fehlgeschlagene Dateien:{Style.RESET_ALL} {len(failed_files)}"
     )
+    if hash_algorithm is not None:
+        logging.info(
+            f"  {Fore.BLUE}Verwendeter Hash-Algorithmus:{Style.RESET_ALL} {hash_algorithm}"
+        )
 
     return dir_structure, summary

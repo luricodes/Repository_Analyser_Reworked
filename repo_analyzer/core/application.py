@@ -20,7 +20,6 @@ from repo_analyzer.logging.setup import setup_logging
 from repo_analyzer.output.output_factory import OutputFactory
 from repo_analyzer.traversal.traverser import get_directory_structure
 
-
 def run() -> None:
     """
     Hauptfunktion zur Analyse von Repositorys.
@@ -53,6 +52,14 @@ def run() -> None:
     threads: Optional[int] = args.threads
     exclude_patterns: List[str] = args.exclude_patterns
     encoding: str = args.encoding  # Neues Argument
+
+    # Bestimmung des Hash-Algorithmus oder Deaktivierung
+    if args.no_hash:
+        hash_algorithm = None
+        logging.info("Hash-Verifizierung ist deaktiviert.")
+    else:
+        hash_algorithm = args.hash_algorithm
+        logging.info(f"Verwende Hash-Algorithmus: {hash_algorithm}")
 
     # Dynamische Bestimmung der Thread-Anzahl, falls nicht angegeben
     if threads is None:
@@ -127,6 +134,7 @@ def run() -> None:
             lock=cache_lock,
             threads=threads,
             encoding=encoding,
+            hash_algorithm=hash_algorithm,  # Neuer Parameter
         )
     except KeyboardInterrupt:
         logging.warning("Skript wurde vom Benutzer abgebrochen.")
@@ -158,7 +166,7 @@ def run() -> None:
         sys.exit(1)
 
     # Erstelle die Zusammenfassung
-    output_data: Dict[str, Any] = create_summary(structure, summary, include_summary)
+    output_data: Dict[str, Any] = create_summary(structure, summary, include_summary, hash_algorithm)
 
     # Schreibe die Struktur (und ggf. die Zusammenfassung) in die Ausgabedatei
     try:

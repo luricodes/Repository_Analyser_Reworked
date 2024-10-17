@@ -14,7 +14,6 @@ from ..cache.sqlite_cache import get_cached_entry, set_cached_entry
 from ..processing.hashing import compute_file_hash
 from ..utils.mime_type import is_binary
 
-
 def process_file(
     file_path: Path,
     max_file_size: int,
@@ -22,33 +21,51 @@ def process_file(
     image_extensions: Set[str],
     conn: sqlite3.Connection,
     lock: threading.Lock,
-    encoding: str = 'utf-8'
+    encoding: str = 'utf-8',
+    hash_algorithm: Optional[str] = "md5",  # Neuer Parameter
 ) -> Tuple[str, Optional[Dict[str, Any]]]:
     """
     Verarbeitet eine einzelne Datei und gibt deren Informationen zurück.
+
+    Args:
+        file_path (Path): Pfad zur Datei.
+        max_file_size (int): Maximale Dateigröße in Bytes.
+        include_binary (bool): Gibt an, ob binäre Dateien eingeschlossen werden sollen.
+        image_extensions (Set[str]): Set von Bilddateiendungen.
+        conn (sqlite3.Connection): SQLite-Verbindung.
+        lock (threading.Lock): Lock für den Zugriff auf den Cache.
+        encoding (str, optional): Encoding für Textdateien.
+        hash_algorithm (Optional[str], optional): Hash-Algorithmus oder None.
+
+    Returns:
+        Tuple[str, Optional[Dict[str, Any]]]: Dateiname und Datei-Info oder None.
     """
     filename = file_path.name
 
-    # Prüfe den Cache
-    file_hash = compute_file_hash(file_path)
-    cached_entry = None
-    if file_hash is not None:
-        with lock:
-            cached_entry = get_cached_entry(conn, str(file_path.resolve()))
-    if file_hash is not None and cached_entry and cached_entry[0] == file_hash:
-        logging.debug(
-            f"{Fore.BLUE}Cache-Treffer für Datei: {file_path}{Style.RESET_ALL}"
-        )
-        # Lade file_info aus cached_entry
-        try:
-            cached_file_info = json.loads(cached_entry[1])
-            return filename, cached_file_info
-        except json.JSONDecodeError as e:
-            logging.warning(
-                f"{Fore.YELLOW}Fehler beim Dekodieren der gecachten Dateiinfo für "
-                f"{file_path}: {e}{Style.RESET_ALL}"
+    # Prüfe den Cache nur, wenn Hashing aktiviert ist
+    if hash_algorithm is not None:
+        file_hash = compute_file_hash(file_path, algorithm=hash_algorithm)
+        cached_entry = None
+        if file_hash is not None:
+            with lock:
+                cached_entry = get_cached_entry(conn, str(file_path.resolve()))
+        
+        if (file_hash is not None and cached_entry 
+            and cached_entry[0] == file_hash 
+            and cached_entry[1] == hash_algorithm):
+            logging.debug(
+                f"{Fore.BLUE}Cache-Treffer für Datei: {file_path}{Style.RESET_ALL}"
             )
-            # Weiter zur erneuten Verarbeitung der Datei
+            # Lade file_info aus cached_entry
+            try:
+                cached_file_info = json.loads(cached_entry[2])
+                return filename, cached_file_info
+            except json.JSONDecodeError as e:
+                logging.warning(
+                    f"{Fore.YELLOW}Fehler beim Dekodieren der gecachten Dateiinfo für "
+                    f"{file_path}: {e}{Style.RESET_ALL}"
+                )
+                # Weiter zur erneuten Verarbeitung der Datei
 
     file_extension = file_path.suffix.lower()
 
@@ -140,9 +157,9 @@ def process_file(
             f"{e}{Style.RESET_ALL}"
         )
 
-    # Aktualisiere den Cache
-    if file_hash is not None:
+    # Aktualisiere den Cache nur, wenn Hashing aktiviert ist
+    if hash_algorithm is not None and file_hash is not None:
         with lock:
-            set_cached_entry(conn, str(file_path.resolve()), file_hash, file_info)
+            set_cached_entry(conn, str(file_path.resolve()), file_hash, hash_algorithm, file_info)
 
     return filename, file_info

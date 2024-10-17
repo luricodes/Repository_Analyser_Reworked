@@ -12,9 +12,6 @@ from ..config.defaults import DEFAULT_MAX_FILE_SIZE
 def parse_arguments():
     """
     Parst die Kommandozeilenargumente und gibt die konfigurierten Argumente zurück.
-
-    Returns:
-        argparse.Namespace: Die geparsten Argumente.
     """
     parser = argparse.ArgumentParser(
         description=(
@@ -23,7 +20,7 @@ def parse_arguments():
         epilog=(
             "Beispiele:\n"
             "  python script.py /path/to/repo -o output.json\n"
-            "  python script.py --exclude-folders build dist --include-binary --format yaml"
+            "  python script.py --exclude-folders build dist --include-binary --format yaml\n"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -149,6 +146,20 @@ def parse_arguments():
         type=str,
         default="utf-8",
         help="Standard-Encoding für das Lesen von Textdateien (Standard: utf-8).",
+    )
+    # Neue, gegenseitig ausschließende Argumente für Hash-Optionen
+    hash_group = parser.add_mutually_exclusive_group()
+    hash_group.add_argument(
+        "--hash-algorithm",
+        type=str,
+        choices=["md5", "sha1", "sha256", "sha512"],
+        default="md5",
+        help="Hash-Algorithmus zur Verifizierung von Dateien (Standard: md5).",
+    )
+    hash_group.add_argument(
+        "--no-hash",
+        action="store_true",
+        help="Deaktiviert die Hash-Verifizierung und arbeitet ohne Hash.",
     )
 
     args = parser.parse_args()
