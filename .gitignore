@@ -84,3 +84,4 @@ tests/test_logging.py
 tests/test_output.py
 tests/test_processing.py
 tests/test_traversal.py
+repo_analyzer/tests/
