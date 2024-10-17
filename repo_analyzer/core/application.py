@@ -8,7 +8,12 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Set, List
 import os
 
-from repo_analyzer.cache.sqlite_cache import clean_cache, initialize_db, get_db_connection
+from repo_analyzer.cache.sqlite_cache import (
+    clean_cache,
+    initialize_connection_pool,
+    get_connection_context,
+    close_all_connections
+)
 from repo_analyzer.cli.parser import parse_arguments, get_default_cache_path
 from repo_analyzer.config.defaults import (
     CACHE_DB_FILE,
@@ -97,9 +102,8 @@ def run() -> None:
             # Konvertierung von MB zu Bytes
             max_file_size = args.max_size * 1024 * 1024
         else:
-            max_file_size = None  # Wird in get_max_size() behandelt
+            max_file_size = config_manager.get_max_size(None)  # Wird in get_max_size() behandelt
 
-        max_file_size = config_manager.get_max_size(max_file_size)
         logging.info(f"Maximale Dateigröße zum Lesen: {max_file_size / (1024 * 1024)} MB")
     except ValueError as ve:
         logging.error(f"Fehler bei der Bestimmung der maximalen Dateigröße: {ve}")
@@ -153,80 +157,77 @@ def run() -> None:
     cache_dir: Path = initialize_cache_directory(cache_path)
     cache_db_path: Path = cache_dir / CACHE_DB_FILE
     db_path_str = str(cache_db_path)
-    initialize_db(db_path_str)
+    initialize_connection_pool(db_path_str)
 
-    # Bereinige den Cache
-    clean_cache(db_path_str, root_directory)
-
-    # Erhalte die Datenbankverbindung
-    conn = get_db_connection(db_path_str)
+    # Bereinige den Cache basierend auf dem Root-Verzeichnis
+    clean_cache(root_directory)
 
     # Lock für den Cache
     cache_lock: threading.Lock = threading.Lock()
 
-    try:
-        structure, summary = get_directory_structure(
-            root_dir=root_directory,
-            max_file_size=max_file_size,  # Geänderte Variable
-            include_binary=include_binary,
-            excluded_folders=excluded_folders,
-            excluded_files=excluded_files,
-            follow_symlinks=follow_symlinks,
-            image_extensions=image_extensions,
-            exclude_patterns=exclude_patterns,
-            conn=conn,
-            lock=cache_lock,
-            threads=threads,
-            encoding=encoding,
-            hash_algorithm=hash_algorithm,  # Neuer Parameter
-        )
-    except KeyboardInterrupt:
-        logging.warning("Skript wurde vom Benutzer abgebrochen.")
-        # Optional: Speichere die aktuelle Struktur bis zum Abbruchpunkt
+    # Verwenden Sie den Kontextmanager, um eine Verbindung zu erhalten
+    with get_connection_context() as conn:
         try:
-            output_data: Dict[str, Any] = {}
-            if include_summary and summary:
-                output_data["summary"] = summary
-            if structure:
-                output_data["structure"] = structure
+            structure, summary = get_directory_structure(
+                root_dir=root_directory,
+                max_file_size=max_file_size,
+                include_binary=include_binary,
+                excluded_folders=excluded_folders,
+                excluded_files=excluded_files,
+                follow_symlinks=follow_symlinks,
+                image_extensions=image_extensions,
+                exclude_patterns=exclude_patterns,
+                conn=conn,
+                lock=cache_lock,
+                threads=threads,
+                encoding=encoding,
+                hash_algorithm=hash_algorithm,
+            )
+        except KeyboardInterrupt:
+            logging.warning("Skript wurde vom Benutzer abgebrochen.")
+            # Optional: Speichere die aktuelle Struktur bis zum Abbruchpunkt
+            try:
+                output_data: Dict[str, Any] = {}
+                if include_summary and summary:
+                    output_data["summary"] = summary
+                if structure:
+                    output_data["structure"] = structure
 
+                OutputFactory.get_output(output_format)(output_data, output_file)
+
+                logging.info(
+                    f"Der aktuelle Stand der Ordnerstruktur"
+                    f"{' und die Zusammenfassung ' if include_summary else ''}"
+                    f"wurden in '{output_file}' gespeichert."
+                )
+            except Exception as e:
+                logging.error(
+                    f"Fehler beim Schreiben der Ausgabedatei nach Abbruch: {str(e)}"
+                )
+            finally:
+                sys.exit(1)
+        except Exception as e:
+            logging.error(f"Ein unerwarteter Fehler ist aufgetreten: {e}")
+            sys.exit(1)
+
+        # Erstelle die Zusammenfassung
+        try:
+            output_data: Dict[str, Any] = create_summary(structure, summary, include_summary, hash_algorithm)
+        except Exception as e:
+            logging.error(f"Fehler beim Erstellen der Zusammenfassung: {e}")
+            output_data = structure  # Fallback ohne Zusammenfassung
+
+        # Schreibe die Struktur (und ggf. die Zusammenfassung) in die Ausgabedatei
+        try:
             OutputFactory.get_output(output_format)(output_data, output_file)
 
             logging.info(
-                f"Der aktuelle Stand der Ordnerstruktur"
+                f"Die Ordnerstruktur"
                 f"{' und die Zusammenfassung ' if include_summary else ''}"
-                f"wurden in '{output_file}' gespeichert."
+                f"wurden erfolgreich in '{output_file}' gespeichert."
             )
         except Exception as e:
-            logging.error(
-                f"Fehler beim Schreiben der Ausgabedatei nach Abbruch: {str(e)}"
-            )
-        finally:
-            conn.close()
-            sys.exit(1)
-    except Exception as e:
-        logging.error(f"Ein unerwarteter Fehler ist aufgetreten: {e}")
-        conn.close()
-        sys.exit(1)
+            logging.error(f"Fehler beim Schreiben der Ausgabedatei: {str(e)}")
 
-    # Erstelle die Zusammenfassung
-    try:
-        output_data: Dict[str, Any] = create_summary(structure, summary, include_summary, hash_algorithm)
-    except Exception as e:
-        logging.error(f"Fehler beim Erstellen der Zusammenfassung: {e}")
-        output_data = structure  # Fallback ohne Zusammenfassung
-
-    # Schreibe die Struktur (und ggf. die Zusammenfassung) in die Ausgabedatei
-    try:
-        OutputFactory.get_output(output_format)(output_data, output_file)
-
-        logging.info(
-            f"Die Ordnerstruktur"
-            f"{' und die Zusammenfassung ' if include_summary else ''}"
-            f"wurden erfolgreich in '{output_file}' gespeichert."
-        )
-    except Exception as e:
-        logging.error(f"Fehler beim Schreiben der Ausgabedatei: {str(e)}")
-
-    # Schließe die SQLite-Verbindung
-    conn.close()
+    # Schließe die SQLite-Verbindungen nach Abschluss
+    close_all_connections()

@@ -51,7 +51,7 @@ def parse_arguments():
         default=None,
         help=(
             f"Maximale Dateigröße in MB, bis zu der der Inhalt gelesen wird "
-            f"(Standard: {50} MB)."
+            f"(Standard: 50 MB oder aus der Konfigurationsdatei)."
         ),
     )
     
@@ -168,7 +168,6 @@ def parse_arguments():
         action="store_true",
         help="Deaktiviert die Hash-Verifizierung und arbeitet ohne Hash.",
     )
-    # Neue Option für den Cache-Pfad
     parser.add_argument(
         "--cache-path",
         type=str,

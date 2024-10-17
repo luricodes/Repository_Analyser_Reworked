@@ -1,19 +1,22 @@
 from setuptools import setup, find_packages
 from typing import Optional, List, Dict, Any
 
+with open('README.md', 'r', encoding='utf-8') as fh:
+    long_description = fh.read()
+
 setup(
     name="repo_analyzer",
     version="0.9.0",
     author="Lucas Richert",
     author_email="info@lucasrichert.tech",
     description="Ein Tool zur Analyse von Repository-Strukturen",
-    long_description=open('README.md').read(),
+    long_description=long_description,
     long_description_content_type="text/markdown",
     packages=find_packages(),
     install_requires=[
         "colorama>=0.4.4",
         "dicttoxml>=1.7.4",
-        "python-magic>=0.4.24",
+        "python-magic-bin>=0.4.14",
         "PyYAML>=5.4.1",
         "tqdm>=4.60.0",
     ],

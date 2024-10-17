@@ -82,3 +82,47 @@ optional arguments:
                         Hash-Algorithmus zur Verifizierung von Dateien (Standard:
                         md5).
   --no-hash            Deaktiviert die Hash-Verifizierung und arbeitet ohne Hash.
+
+
+## SQLite Cache Management
+
+Das Modul `sqlite_cache.py` verwaltet den Cache der Repository-Analyse mithilfe von SQLite. Es verwendet einen Verbindungspool, um die Effizienz und Thread-Sicherheit bei Datenbankzugriffen zu gewährleisten.
+
+### Funktionen
+
+- `initialize_connection_pool(db_path: str, pool_size: Optional[int] = None) -> None`
+  - Initialisiert den Verbindungspool mit der angegebenen Anzahl von Verbindungen.
+
+- `get_cached_entry(file_path: str) -> Optional[Dict[str, Any]]`
+  - Ruft den zwischengespeicherten Eintrag für einen gegebenen Dateipfad ab.
+
+- `set_cached_entry(file_path: str, file_hash: Optional[str], hash_algorithm: Optional[str], file_info: Dict[str, Any], size: int, mtime: float) -> None`
+  - Setzt oder aktualisiert den zwischengespeicherten Eintrag für einen gegebenen Dateipfad.
+
+- `clean_cache(root_dir: Path) -> None`
+  - Bereinigt den Cache, indem Einträge für Dateien entfernt werden, die nicht mehr existieren.
+
+- `close_all_connections() -> None`
+  - Schließt alle SQLite-Verbindungen im Verbindungspool ordnungsgemäß.
+
+### Nutzung des sqlite_cache Verbindungspools
+
+```python
+from repo_analyzer.cache.sqlite_cache import initialize_connection_pool, get_cached_entry, set_cached_entry, clean_cache, close_all_connections
+from pathlib import Path
+
+# Initialisiere den Verbindungspool
+initialize_connection_pool("path/to/cache.db", pool_size=10)
+
+# Setze einen Cache-Eintrag
+set_cached_entry("/path/to/file.txt", "hash123", "sha256", {"content": "data"}, 1024, 1610000000.0)
+
+# Hole einen Cache-Eintrag
+entry = get_cached_entry("/path/to/file.txt")
+print(entry)
+
+# Bereinige den Cache basierend auf dem Root-Verzeichnis
+clean_cache(Path("/path/to/root_dir"))
+
+# Schließe alle Verbindungen beim Beenden des Programms
+close_all_connections()

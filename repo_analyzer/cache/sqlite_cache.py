@@ -5,9 +5,11 @@ import logging
 import sqlite3
 import sys
 import threading
+import queue
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Generator
 
+from contextlib import contextmanager
 from colorama import Fore, Style, init as colorama_init
 
 # Initialize colorama
@@ -22,64 +24,88 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
-# Thread-local storage for database connections
-_thread_local = threading.local()
+# Connection pool settings
+DEFAULT_CONNECTION_POOL_SIZE = 10  # Standardgröße des Verbindungspools
+connection_pool = queue.Queue(maxsize=DEFAULT_CONNECTION_POOL_SIZE)
+pool_initialized = False
+pool_init_lock = threading.Lock()
 
-def get_db_connection(db_path: str) -> sqlite3.Connection:
-    """
-    Retrieves a thread-local SQLite connection. Creates one if it doesn't exist.
-    
-    Args:
-        db_path (str): Path to the SQLite database file.
-    
-    Returns:
-        sqlite3.Connection: SQLite connection object.
-    """
-    if not hasattr(_thread_local, 'connection'):
-        try:
-            conn = sqlite3.connect(db_path, check_same_thread=False)
-            with conn:
-                conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS cache (
-                        file_path TEXT PRIMARY KEY,
-                        file_hash TEXT,
-                        hash_algorithm TEXT,
-                        file_info TEXT,
-                        size INTEGER,
-                        mtime REAL
-                    )
-                    """
-                )
-            _thread_local.connection = conn
-        except sqlite3.Error as e:
-            logging.error(f"Error initializing database connection: {e}")
-            raise
-    return _thread_local.connection
+def initialize_connection_pool(db_path: str, pool_size: Optional[int] = None) -> None:
+    global pool_initialized
+    if not pool_initialized:
+        with pool_init_lock:
+            if not pool_initialized:
+                actual_pool_size = pool_size if pool_size is not None else DEFAULT_CONNECTION_POOL_SIZE
+                if not isinstance(actual_pool_size, int) or actual_pool_size <= 0:
+                    logging.error("pool_size muss eine positive ganze Zahl sein.")
+                    sys.exit(1)
+                for _ in range(actual_pool_size):
+                    try:
+                        conn = sqlite3.connect(db_path, check_same_thread=False)
+                        # Setzen der PRAGMA-Einstellungen für bessere Leistung und Sicherheit
+                        conn.execute("PRAGMA foreign_keys = ON;")
+                        conn.execute("PRAGMA journal_mode = WAL;")  # Erhöht die Parallelität
+                        conn.execute(
+                            """
+                            CREATE TABLE IF NOT EXISTS cache (
+                                file_path TEXT PRIMARY KEY,
+                                file_hash TEXT,
+                                hash_algorithm TEXT,
+                                file_info TEXT,
+                                size INTEGER,
+                                mtime REAL
+                            )
+                            """
+                        )
+                        # Hinzufügen eines Indexes für hash_algorithm
+                        conn.execute(
+                            """
+                            CREATE INDEX IF NOT EXISTS idx_hash_algorithm ON cache(hash_algorithm);
+                            """
+                        )
+                        connection_pool.put(conn)
+                    except sqlite3.Error as e:
+                        logging.error(f"Fehler beim Initialisieren der Datenbankverbindung: {e}")
+                        sys.exit(1)
+                pool_initialized = True
+                logging.info(f"Datenbankverbindungspool mit {actual_pool_size} Verbindungen initialisiert.")
 
-def close_db_connection():
+@contextmanager
+def get_connection_context() -> Generator[sqlite3.Connection, None, None]:
+    if not pool_initialized:
+        logging.error("Verbindungspool ist nicht initialisiert. Bitte rufe initialize_connection_pool auf.")
+        raise RuntimeError("Verbindungspool nicht initialisiert.")
+    conn = None
+    try:
+        conn = connection_pool.get(timeout=10)
+        yield conn
+    except queue.Empty:
+        logging.error("Keine verfügbaren Datenbankverbindungen im Pool.")
+        raise
+    finally:
+        if conn:
+            connection_pool.put(conn)
+
+def close_all_connections() -> None:
     """
-    Closes the thread-local SQLite connection if it exists.
+    Schließt alle SQLite-Verbindungen im Verbindungspool.
     """
-    conn = getattr(_thread_local, 'connection', None)
-    if conn:
+    if not pool_initialized:
+        logging.warning("Verbindungspool wurde nicht initialisiert. Keine Verbindungen zu schließen.")
+        return
+    closed_connections = 0
+    while not connection_pool.empty():
         try:
+            conn = connection_pool.get_nowait()
             conn.close()
-            del _thread_local.connection
+            closed_connections += 1
+        except queue.Empty:
+            break
         except sqlite3.Error as e:
-            logging.error(f"Error closing database connection: {e}")
+            logging.error(f"Fehler beim Schließen der Datenbankverbindung: {e}")
+    logging.info(f"Alle {closed_connections} Datenbankverbindungen im Pool wurden geschlossen.")
 
 def get_cached_entry(conn: sqlite3.Connection, file_path: str) -> Optional[Dict[str, Any]]:
-    """
-    Retrieves the cached entry for a given file path.
-    
-    Args:
-        conn (sqlite3.Connection): SQLite connection object.
-        file_path (str): The path to the file.
-    
-    Returns:
-        Optional[Dict[str, Any]]: Dictionary containing cached data or None if not found.
-    """
     absolute_file_path = str(Path(file_path).resolve())
     try:
         cursor = conn.execute(
@@ -91,9 +117,12 @@ def get_cached_entry(conn: sqlite3.Connection, file_path: str) -> Optional[Dict[
             file_hash, hash_algorithm, file_info_json, size, mtime = result
             try:
                 file_info = json.loads(file_info_json)
+                logging.debug(f"Cache-Treffer für Datei: {absolute_file_path} mit Hash: {file_hash}")
             except json.JSONDecodeError as e:
-                logging.error(f"Error parsing file_info for {absolute_file_path}: {e}")
-                file_info = {}
+                logging.error(f"Fehler beim Parsen von file_info für {absolute_file_path}: {e}")
+                conn.execute("DELETE FROM cache WHERE file_path = ?", (absolute_file_path,))
+                conn.commit()
+                return None
             return {
                 "file_hash": file_hash,
                 "hash_algorithm": hash_algorithm,
@@ -102,7 +131,7 @@ def get_cached_entry(conn: sqlite3.Connection, file_path: str) -> Optional[Dict[
                 "mtime": mtime
             }
     except sqlite3.Error as e:
-        logging.error(f"Error retrieving cached entry for {absolute_file_path}: {e}")
+        logging.error(f"Fehler beim Abrufen des zwischengespeicherten Eintrags für {absolute_file_path}: {e}")
     return None
 
 def set_cached_entry(
@@ -112,92 +141,80 @@ def set_cached_entry(
     hash_algorithm: Optional[str],
     file_info: Dict[str, Any],
     size: int,
-    mtime: float,
+    mtime: float
 ) -> None:
     """
-    Sets or updates the cached entry for a given file path.
-    
+    Setzt oder aktualisiert den zwischengespeicherten Eintrag für einen gegebenen Dateipfad.
+
     Args:
-        conn (sqlite3.Connection): SQLite connection object.
-        file_path (str): The path to the file.
-        file_hash (Optional[str]): Hash of the file.
-        hash_algorithm (Optional[str]): Hash algorithm used.
-        file_info (Dict[str, Any]): Information about the file.
-        size (int): Size of the file in bytes.
-        mtime (float): Last modification time of the file.
+        conn (sqlite3.Connection): Die SQLite-Verbindung.
+        file_path (str): Der Pfad zur Datei.
+        file_hash (Optional[str]): Hash der Datei.
+        hash_algorithm (Optional[str]): Verwendeter Hash-Algorithmus.
+        file_info (Dict[str, Any]): Informationen über die Datei.
+        size (int): Größe der Datei in Bytes.
+        mtime (float): Letzte Änderungszeit der Datei.
     """
     absolute_file_path = str(Path(file_path).resolve())
     file_info_json = json.dumps(file_info)
     try:
-        with conn:
-            conn.execute(
-                """
-                INSERT INTO cache (file_path, file_hash, hash_algorithm, file_info, size, mtime)
-                VALUES (?, ?, ?, ?, ?, ?)
-                ON CONFLICT(file_path) DO UPDATE SET
-                    file_hash = excluded.file_hash,
-                    hash_algorithm = excluded.hash_algorithm,
-                    file_info = excluded.file_info,
-                    size = excluded.size,
-                    mtime = excluded.mtime
-                """,
-                (absolute_file_path, file_hash, hash_algorithm, file_info_json, size, mtime),
-            )
+        conn.execute(
+            """
+            INSERT INTO cache (file_path, file_hash, hash_algorithm, file_info, size, mtime)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(file_path) DO UPDATE SET
+                file_hash = excluded.file_hash,
+                hash_algorithm = excluded.hash_algorithm,
+                file_info = excluded.file_info,
+                size = excluded.size,
+                mtime = excluded.mtime
+            """,
+            (absolute_file_path, file_hash, hash_algorithm, file_info_json, size, mtime),
+        )
+        conn.commit()
     except sqlite3.Error as e:
-        logging.error(f"Error setting cached entry for {absolute_file_path}: {e}")
+        logging.error(f"Fehler beim Setzen des zwischengespeicherten Eintrags für {absolute_file_path}: {e}")
 
-def clean_cache(
-    db_path: str, root_dir: Path
-) -> None:
-    """
-    Cleans the cache by removing entries for files that no longer exist.
+def clean_cache(root_dir: Path) -> None:
+    if not pool_initialized:
+        logging.error("Verbindungspool ist nicht initialisiert. Bitte rufe initialize_connection_pool auf.")
+        raise RuntimeError("Verbindungspool nicht initialisiert.")
     
-    Args:
-        db_path (str): Path to the SQLite database file.
-        root_dir (Path): Root directory to scan for existing files.
-    """
-    conn = get_db_connection(db_path)
+    included_files = set()
     try:
-        cursor = conn.execute("SELECT file_path FROM cache")
-        cached_files = {row[0] for row in cursor.fetchall()}
-    except sqlite3.Error as e:
-        logging.error(f"Error fetching cached file paths: {e}")
-        return
-
-    try:
-        existing_files = {str(p.resolve()) for p in root_dir.rglob("*") if p.is_file()}
+        for p in root_dir.rglob("*"):
+            if p.is_file():
+                included_files.add(str(p.resolve()))
     except Exception as e:
-        logging.error(f"Error scanning root directory {root_dir}: {e}")
+        logging.error(f"Fehler beim Scannen des Wurzelverzeichnisses {root_dir}: {e}")
         return
 
-    files_to_remove = cached_files - existing_files
-
-    if files_to_remove:
+    with get_connection_context() as conn:
         try:
-            with conn:
+            conn.execute("BEGIN TRANSACTION;")
+            cursor = conn.execute("SELECT file_path FROM cache")
+            cached_files = {row[0] for row in cursor.fetchall()}
+        except sqlite3.Error as e:
+            logging.error(f"Fehler beim Abrufen der zwischengespeicherten Dateipfade: {e}")
+            conn.execute("ROLLBACK;")
+            return
+
+        files_to_remove = cached_files - included_files
+
+        if files_to_remove:
+            try:
                 conn.executemany(
                     "DELETE FROM cache WHERE file_path = ?",
                     ((fp,) for fp in files_to_remove),
                 )
-            if USE_COLOR:
-                message = f"{Fore.GREEN}Cache cleaned. {len(files_to_remove)} entries removed.{Style.RESET_ALL}"
-            else:
-                message = f"Cache cleaned. {len(files_to_remove)} entries removed."
-            logging.info(message)
-        except sqlite3.Error as e:
-            logging.error(f"Error cleaning cache: {e}")
-
-def initialize_db(db_path: str) -> None:
-    """
-    Initializes the database by ensuring the cache table exists.
-    
-    Args:
-        db_path (str): Path to the SQLite database file.
-    """
-    get_db_connection(db_path)
-
-def close_all_connections():
-    """
-    Closes all thread-local database connections.
-    """
-    close_db_connection()
+                conn.commit()
+                if USE_COLOR:
+                    message = f"{Fore.GREEN}Cache bereinigt. {len(files_to_remove)} Einträge entfernt.{Style.RESET_ALL}"
+                else:
+                    message = f"Cache bereinigt. {len(files_to_remove)} Einträge entfernt."
+                logging.info(message)
+            except sqlite3.Error as e:
+                logging.error(f"Fehler beim Bereinigen des Caches: {e}")
+                conn.execute("ROLLBACK;")
+        else:
+            logging.info("Kein Cache-Bereinigung erforderlich. Alle Einträge sind aktuell.")
