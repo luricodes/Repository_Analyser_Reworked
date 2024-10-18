@@ -15,15 +15,16 @@ from repo_analyzer.traversal.patterns import matches_patterns
 from repo_analyzer.cache.sqlite_cache import get_connection_context
 
 
-def recursive_traverse(
+def traverse_and_collect(
     root_dir: Path,
     excluded_folders: Set[str],
     excluded_files: Set[str],
     exclude_patterns: List[str],
     follow_symlinks: bool
-) -> List[Path]:
+) -> Tuple[List[Path], int, int]:
     """
-    Rekursive Traversierung des Verzeichnisses, wobei ausgeschlossene Ordner und Dateien übersprungen werden.
+    Durchläuft das Verzeichnis rekursiv, sammelt eingeschlossene Dateien und zählt
+    die Anzahl der eingeschlossenen und ausgeschlossenen Dateien.
 
     Args:
         root_dir (Path): Das Wurzelverzeichnis zum Traversieren.
@@ -33,12 +34,17 @@ def recursive_traverse(
         follow_symlinks (bool): Gibt an, ob symbolischen Links gefolgt werden sollen.
 
     Returns:
-        List[Path]: Eine Liste der eingeschlossenen Dateipfade.
+        Tuple[List[Path], int, int]: Eine Liste der eingeschlossenen Dateipfade,
+                                      die Anzahl der eingeschlossenen Dateien und
+                                      die Anzahl der ausgeschlossenen Dateien.
     """
     paths: List[Path] = []
+    included = 0
+    excluded = 0
     visited_paths: Set[Path] = set()
 
     def _traverse(current_dir: Path) -> None:
+        nonlocal included, excluded
         try:
             if follow_symlinks:
                 resolved_dir: Path = current_dir.resolve()
@@ -74,8 +80,10 @@ def recursive_traverse(
                         logging.debug(
                             f"{Fore.YELLOW}Ausschließen von Datei: {entry}{Style.RESET_ALL}"
                         )
+                        excluded += 1
                         continue
                     paths.append(entry)
+                    included += 1
         except PermissionError as e:
             logging.warning(
                 f"{Fore.YELLOW}Konnte Verzeichnis nicht lesen: {current_dir} - {e}{Style.RESET_ALL}"
@@ -86,80 +94,7 @@ def recursive_traverse(
             )
 
     _traverse(root_dir)
-    return paths
-
-def count_total_files(
-    root_dir: Path,
-    excluded_folders: Set[str],
-    excluded_files: Set[str],
-    exclude_patterns: List[str],
-    follow_symlinks: bool
-) -> Tuple[int, int]:
-    """
-    Zählt die insgesamt eingeschlossenen und ausgeschlossenen Dateien.
-
-    Args:
-        root_dir (Path): Das Wurzelverzeichnis zum Traversieren.
-        excluded_folders (Set[str]): Eine Menge von Ordnernamen, die ausgeschlossen werden sollen.
-        excluded_files (Set[str]): Eine Menge von Dateinamen, die ausgeschlossen werden sollen.
-        exclude_patterns (List[str]): Eine Liste von Mustern zum Ausschließen von Dateien und Ordnern.
-        follow_symlinks (bool): Gibt an, ob symbolischen Links gefolgt werden sollen.
-
-    Returns:
-        Tuple[int, int]: Ein Tupel bestehend aus der Anzahl der eingeschlossenen und ausgeschlossenen Dateien.
-    """
-    included: int = 0
-    excluded: int = 0
-    visited_paths: Set[Path] = set()
-
-    def _traverse_count(current_dir: Path) -> None:
-        nonlocal included, excluded
-        try:
-            if follow_symlinks:
-                resolved_dir: Path = current_dir.resolve()
-                if resolved_dir in visited_paths:
-                    logging.warning(
-                        f"{Fore.RED}Zirkulärer symbolischer Link gefunden: {current_dir}{Style.RESET_ALL}"
-                    )
-                    return
-                visited_paths.add(resolved_dir)
-        except Exception as e:
-            logging.error(
-                f"{Fore.RED}Fehler beim Auflösen von {current_dir}: {e}{Style.RESET_ALL}"
-            )
-            return
-
-        try:
-            for entry in current_dir.iterdir():
-                if entry.is_dir():
-                    if (
-                        entry.name in excluded_folders
-                        or matches_patterns(entry.name, exclude_patterns)
-                    ):
-                        logging.debug(
-                            f"{Fore.CYAN}Ausschließen von Ordner: {entry}{Style.RESET_ALL}"
-                        )
-                        continue
-                    _traverse_count(entry)
-                elif entry.is_file():
-                    if (
-                        entry.name in excluded_files
-                        or matches_patterns(entry.name, exclude_patterns)
-                    ):
-                        excluded += 1
-                    else:
-                        included += 1
-        except PermissionError as e:
-            logging.warning(
-                f"{Fore.YELLOW}Konnte Verzeichnis nicht lesen: {current_dir} - {e}{Style.RESET_ALL}"
-            )
-        except Exception as e:
-            logging.error(
-                f"{Fore.RED}Fehler beim Durchlaufen von {current_dir}: {e}{Style.RESET_ALL}"
-            )
-
-    _traverse_count(root_dir)
-    return included, excluded
+    return paths, included, excluded
 
 
 def get_directory_structure(
@@ -175,9 +110,28 @@ def get_directory_structure(
     encoding: str = 'utf-8',
     hash_algorithm: Optional[str] = "md5",
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """
+    Ermittelt die Verzeichnisstruktur und eine Zusammenfassung der Dateien.
+
+    Args:
+        root_dir (Path): Das Wurzelverzeichnis zum Traversieren.
+        max_file_size (int): Maximale Dateigröße in Bytes.
+        include_binary (bool): Ob binäre Dateien einbezogen werden sollen.
+        excluded_folders (Set[str]): Ausgeschlossene Ordner.
+        excluded_files (Set[str]): Ausgeschlossene Dateien.
+        follow_symlinks (bool): Ob symbolischen Links gefolgt werden soll.
+        image_extensions (Set[str]): Zusätzliche Bilddateiendungen.
+        exclude_patterns (List[str]): Ausgeschlossene Muster.
+        threads (int): Anzahl der Threads für die parallele Verarbeitung.
+        encoding (str, optional): Standard-Encoding für Textdateien.
+        hash_algorithm (Optional[str], optional): Hash-Algorithmus zur Verifizierung.
+
+    Returns:
+        Tuple[Dict[str, Any], Dict[str, Any]]: Die Verzeichnisstruktur und die Zusammenfassung.
+    """
     dir_structure: Dict[str, Any] = {}
 
-    included_files, excluded_files_count = count_total_files(
+    files_to_process, included_files, excluded_files_count = traverse_and_collect(
         root_dir,
         excluded_folders,
         excluded_files,
@@ -200,14 +154,6 @@ def get_directory_structure(
 
     failed_files: List[Dict[str, str]] = []
 
-    files_to_process: List[Path] = recursive_traverse(
-        root_dir,
-        excluded_folders,
-        excluded_files,
-        exclude_patterns,
-        follow_symlinks
-    )
-
     with ThreadPoolExecutor(max_workers=threads) as executor:
         future_to_file: Dict[Future[Tuple[str, Any]], Path] = {}
         try:
@@ -221,7 +167,7 @@ def get_directory_structure(
                     encoding=encoding,
                     hash_algorithm=hash_algorithm,
                 )
-                future_to_file[future] = file_path  # Korrektur hier
+                future_to_file[future] = file_path
         except KeyboardInterrupt:
             logging.warning("\nAbbruch durch Benutzer. Versuche, laufende Aufgaben zu beenden...")
             executor.shutdown(wait=False, cancel_futures=True)
@@ -235,7 +181,7 @@ def get_directory_structure(
 
         try:
             for future in as_completed(future_to_file):
-                file_path: Path = future_to_file[future]  # Korrektur hier
+                file_path: Path = future_to_file[future]
                 try:
                     filename: str
                     file_info: Any
