@@ -5,21 +5,30 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from colorama import Fore, Style
+# Optional: Farbliche Hervorhebung in Logs beibehalten
+# Falls Farben nicht benötigt werden, können die folgenden Zeilen entfernt werden
+from colorama import Fore, Style, init
 
-def compute_file_hash(file_path: Path, algorithm: Optional[str] = "md5") -> Optional[str]:
+# Initialisierung von colorama
+init(autoreset=True)
+
+
+def compute_file_hash(file_path: Path, algorithm: str = "sha256") -> Optional[str]:
     """
     Berechnet den Hash einer Datei basierend auf dem angegebenen Algorithmus.
 
     Args:
         file_path (Path): Der Pfad zur Datei.
-        algorithm (Optional[str]): Der Hash-Algorithmus (z.B. 'md5', 'sha1').
+        algorithm (str, optional): Der Hash-Algorithmus (z.B. 'md5', 'sha1', 'sha256'). 
+                                   Standard ist 'sha256'.
 
     Returns:
         Optional[str]: Der Hash der Datei als Hex-String oder None bei Fehlern.
     """
-    if algorithm is None:
+    if not algorithm:
+        logging.error("Kein Hash-Algorithmus angegeben.")
         return None
+
     algorithm = algorithm.lower()
     try:
         hasher = hashlib.new(algorithm)
@@ -28,12 +37,15 @@ def compute_file_hash(file_path: Path, algorithm: Optional[str] = "md5") -> Opti
         return None
 
     try:
-        with file_path.open('rb') as f:
-            for chunk in iter(lambda: f.read(4096), b""):
+        with file_path.open('rb') as file:
+            for chunk in iter(lambda: file.read(4096), b""):
                 hasher.update(chunk)
         return hasher.hexdigest()
-    except (FileNotFoundError, PermissionError, OSError) as e:
-        logging.warning(
-            f"{Fore.YELLOW}Konnte Hash nicht berechnen für: {file_path} - {e}{Style.RESET_ALL}"
-        )
-        return None
+    except FileNotFoundError:
+        logging.warning(f"{Fore.YELLOW}Datei nicht gefunden: {file_path}{Style.RESET_ALL}")
+    except PermissionError:
+        logging.warning(f"{Fore.YELLOW}Keine Berechtigung zum Lesen der Datei: {file_path}{Style.RESET_ALL}")
+    except OSError as e:
+        logging.warning(f"{Fore.YELLOW}OS-Fehler beim Lesen der Datei {file_path}: {e}{Style.RESET_ALL}")
+    
+    return None
