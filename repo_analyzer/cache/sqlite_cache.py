@@ -86,10 +86,7 @@ def get_connection_context() -> Generator[sqlite3.Connection, None, None]:
         if conn:
             connection_pool.put(conn)
 
-def close_all_connections() -> None:
-    """
-    Schließt alle SQLite-Verbindungen im Verbindungspool.
-    """
+def close_all_connections(exclude_conn: Optional[sqlite3.Connection] = None) -> None:
     if not pool_initialized:
         logging.warning("Verbindungspool wurde nicht initialisiert. Keine Verbindungen zu schließen.")
         return
@@ -97,8 +94,13 @@ def close_all_connections() -> None:
     while not connection_pool.empty():
         try:
             conn = connection_pool.get_nowait()
-            conn.close()
-            closed_connections += 1
+            if conn != exclude_conn:
+                conn.close()
+                closed_connections += 1
+            else:
+                # Falls es die zu exkludierende Verbindung ist, zurück in den Pool legen
+                connection_pool.put(conn)
+                break
         except queue.Empty:
             break
         except sqlite3.Error as e:
@@ -208,6 +210,14 @@ def clean_cache(root_dir: Path) -> None:
                     ((fp,) for fp in files_to_remove),
                 )
                 conn.commit()
+
+                # Führe VACUUM aus, um die Datenbankgröße zu reduzieren
+                try:
+                    conn.execute("VACUUM;")
+                    logging.info("VACUUM ausgeführt, Datenbankgröße reduziert.")
+                except sqlite3.Error as e:
+                    logging.error(f"Fehler beim Ausführen von VACUUM: {e}")
+
                 if USE_COLOR:
                     message = f"{Fore.GREEN}Cache bereinigt. {len(files_to_remove)} Einträge entfernt.{Style.RESET_ALL}"
                 else:
