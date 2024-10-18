@@ -2,15 +2,16 @@
 
 import json
 import logging
+import queue
 import sqlite3
 import sys
 import threading
-import queue
-from pathlib import Path
-from typing import Any, Dict, Optional, Generator
-
 from contextlib import contextmanager
-from colorama import Fore, Style, init as colorama_init
+from pathlib import Path
+from typing import Any, Dict, Generator, Optional
+
+from colorama import Fore, Style
+from colorama import init as colorama_init
 
 # Initialize colorama
 colorama_init(autoreset=True)
@@ -30,18 +31,36 @@ connection_pool = queue.Queue(maxsize=DEFAULT_CONNECTION_POOL_SIZE)
 pool_initialized = False
 pool_init_lock = threading.Lock()
 
-def initialize_connection_pool(db_path: str, pool_size: Optional[int] = None) -> None:
+
+def initialize_connection_pool(
+    db_path: str,
+    pool_size: Optional[int] = None
+) -> None:
+    """
+    Initialisiert den Verbindungspool mit SQLite-Verbindungen.
+
+    Args:
+        db_path (str): Pfad zur SQLite-Datenbankdatei.
+        pool_size (Optional[int]): Optionale Größe des Verbindungspools.
+    """
     global pool_initialized
     if not pool_initialized:
         with pool_init_lock:
             if not pool_initialized:
-                actual_pool_size = pool_size if pool_size is not None else DEFAULT_CONNECTION_POOL_SIZE
+                actual_pool_size = (
+                    pool_size
+                    if pool_size is not None
+                    else DEFAULT_CONNECTION_POOL_SIZE
+                )
                 if not isinstance(actual_pool_size, int) or actual_pool_size <= 0:
                     logging.error("pool_size muss eine positive ganze Zahl sein.")
                     sys.exit(1)
                 for _ in range(actual_pool_size):
                     try:
-                        conn = sqlite3.connect(db_path, check_same_thread=False)
+                        conn = sqlite3.connect(
+                            db_path,
+                            check_same_thread=False
+                        )
                         # Setzen der PRAGMA-Einstellungen für bessere Leistung und Sicherheit
                         conn.execute("PRAGMA foreign_keys = ON;")
                         conn.execute("PRAGMA journal_mode = WAL;")  # Erhöht die Parallelität
@@ -60,20 +79,36 @@ def initialize_connection_pool(db_path: str, pool_size: Optional[int] = None) ->
                         # Hinzufügen eines Indexes für hash_algorithm
                         conn.execute(
                             """
-                            CREATE INDEX IF NOT EXISTS idx_hash_algorithm ON cache(hash_algorithm);
+                            CREATE INDEX IF NOT EXISTS idx_hash_algorithm
+                            ON cache(hash_algorithm);
                             """
                         )
                         connection_pool.put(conn)
                     except sqlite3.Error as e:
-                        logging.error(f"Fehler beim Initialisieren der Datenbankverbindung: {e}")
+                        logging.error(
+                            f"Fehler beim Initialisieren der Datenbankverbindung: {e}"
+                        )
                         sys.exit(1)
                 pool_initialized = True
-                logging.info(f"Datenbankverbindungspool mit {actual_pool_size} Verbindungen initialisiert.")
+                logging.info(
+                    f"Datenbankverbindungspool mit {actual_pool_size} "
+                    "Verbindungen initialisiert."
+                )
+
 
 @contextmanager
 def get_connection_context() -> Generator[sqlite3.Connection, None, None]:
+    """
+    Kontextmanager, der eine Verbindung aus dem Pool bereitstellt und nach Gebrauch zurückgibt.
+
+    Yields:
+        sqlite3.Connection: Eine SQLite-Verbindung aus dem Pool.
+    """
     if not pool_initialized:
-        logging.error("Verbindungspool ist nicht initialisiert. Bitte rufe initialize_connection_pool auf.")
+        logging.error(
+            "Verbindungspool ist nicht initialisiert. "
+            "Bitte rufe initialize_connection_pool auf."
+        )
         raise RuntimeError("Verbindungspool nicht initialisiert.")
     conn = None
     try:
@@ -86,9 +121,21 @@ def get_connection_context() -> Generator[sqlite3.Connection, None, None]:
         if conn:
             connection_pool.put(conn)
 
-def close_all_connections(exclude_conn: Optional[sqlite3.Connection] = None) -> None:
+
+def close_all_connections(
+    exclude_conn: Optional[sqlite3.Connection] = None
+) -> None:
+    """
+    Schließt alle Verbindungen im Pool, optional mit Ausnahme einer bestimmten Verbindung.
+
+    Args:
+        exclude_conn (Optional[sqlite3.Connection]): Eine Verbindung, die nicht geschlossen werden soll.
+    """
     if not pool_initialized:
-        logging.warning("Verbindungspool wurde nicht initialisiert. Keine Verbindungen zu schließen.")
+        logging.warning(
+            "Verbindungspool wurde nicht initialisiert. "
+            "Keine Verbindungen zu schließen."
+        )
         return
     closed_connections = 0
     while not connection_pool.empty():
@@ -100,18 +147,38 @@ def close_all_connections(exclude_conn: Optional[sqlite3.Connection] = None) -> 
             else:
                 # Falls es die zu exkludierende Verbindung ist, zurück in den Pool legen
                 connection_pool.put(conn)
-                break
         except queue.Empty:
             break
         except sqlite3.Error as e:
-            logging.error(f"Fehler beim Schließen der Datenbankverbindung: {e}")
-    logging.info(f"Alle {closed_connections} Datenbankverbindungen im Pool wurden geschlossen.")
+            logging.error(
+                f"Fehler beim Schließen der Datenbankverbindung: {e}"
+            )
+    logging.info(
+        f"Alle {closed_connections} Datenbankverbindungen im Pool wurden geschlossen."
+    )
 
-def get_cached_entry(conn: sqlite3.Connection, file_path: str) -> Optional[Dict[str, Any]]:
+
+def get_cached_entry(
+    conn: sqlite3.Connection,
+    file_path: str
+) -> Optional[Dict[str, Any]]:
+    """
+    Ruft einen zwischengespeicherten Eintrag für einen gegebenen Dateipfad ab.
+
+    Args:
+        conn (sqlite3.Connection): Die SQLite-Verbindung.
+        file_path (str): Pfad zur Datei.
+
+    Returns:
+        Optional[Dict[str, Any]]: Der zwischengespeicherte Eintrag oder None.
+    """
     absolute_file_path = str(Path(file_path).resolve())
     try:
         cursor = conn.execute(
-            "SELECT file_hash, hash_algorithm, file_info, size, mtime FROM cache WHERE file_path = ?",
+            """
+            SELECT file_hash, hash_algorithm, file_info, size, mtime
+            FROM cache WHERE file_path = ?
+            """,
             (absolute_file_path,),
         )
         result = cursor.fetchone()
@@ -119,10 +186,18 @@ def get_cached_entry(conn: sqlite3.Connection, file_path: str) -> Optional[Dict[
             file_hash, hash_algorithm, file_info_json, size, mtime = result
             try:
                 file_info = json.loads(file_info_json)
-                logging.debug(f"Cache-Treffer für Datei: {absolute_file_path} mit Hash: {file_hash}")
+                logging.debug(
+                    f"Cache-Treffer für Datei: {absolute_file_path} "
+                    f"mit Hash: {file_hash}"
+                )
             except json.JSONDecodeError as e:
-                logging.error(f"Fehler beim Parsen von file_info für {absolute_file_path}: {e}")
-                conn.execute("DELETE FROM cache WHERE file_path = ?", (absolute_file_path,))
+                logging.error(
+                    f"Fehler beim Parsen von file_info für {absolute_file_path}: {e}"
+                )
+                conn.execute(
+                    "DELETE FROM cache WHERE file_path = ?",
+                    (absolute_file_path,)
+                )
                 conn.commit()
                 return None
             return {
@@ -133,8 +208,12 @@ def get_cached_entry(conn: sqlite3.Connection, file_path: str) -> Optional[Dict[
                 "mtime": mtime
             }
     except sqlite3.Error as e:
-        logging.error(f"Fehler beim Abrufen des zwischengespeicherten Eintrags für {absolute_file_path}: {e}")
+        logging.error(
+            f"Fehler beim Abrufen des zwischengespeicherten Eintrags "
+            f"für {absolute_file_path}: {e}"
+        )
     return None
+
 
 def set_cached_entry(
     conn: sqlite3.Connection,
@@ -162,7 +241,9 @@ def set_cached_entry(
     try:
         conn.execute(
             """
-            INSERT INTO cache (file_path, file_hash, hash_algorithm, file_info, size, mtime)
+            INSERT INTO cache (
+                file_path, file_hash, hash_algorithm, file_info, size, mtime
+            )
             VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(file_path) DO UPDATE SET
                 file_hash = excluded.file_hash,
@@ -171,24 +252,42 @@ def set_cached_entry(
                 size = excluded.size,
                 mtime = excluded.mtime
             """,
-            (absolute_file_path, file_hash, hash_algorithm, file_info_json, size, mtime),
+            (
+                absolute_file_path, file_hash, hash_algorithm,
+                file_info_json, size, mtime
+            ),
         )
         conn.commit()
     except sqlite3.Error as e:
-        logging.error(f"Fehler beim Setzen des zwischengespeicherten Eintrags für {absolute_file_path}: {e}")
+        logging.error(
+            f"Fehler beim Setzen des zwischengespeicherten Eintrags "
+            f"für {absolute_file_path}: {e}"
+        )
+
 
 def clean_cache(root_dir: Path) -> None:
+    """
+    Bereinigt den Cache, indem Einträge entfernt werden, die nicht mehr im Dateisystem vorhanden sind.
+
+    Args:
+        root_dir (Path): Das Wurzelverzeichnis zum Scannen von Dateien.
+    """
     if not pool_initialized:
-        logging.error("Verbindungspool ist nicht initialisiert. Bitte rufe initialize_connection_pool auf.")
+        logging.error(
+            "Verbindungspool ist nicht initialisiert. "
+            "Bitte rufe initialize_connection_pool auf."
+        )
         raise RuntimeError("Verbindungspool nicht initialisiert.")
-    
+
     included_files = set()
     try:
         for p in root_dir.rglob("*"):
             if p.is_file():
                 included_files.add(str(p.resolve()))
     except Exception as e:
-        logging.error(f"Fehler beim Scannen des Wurzelverzeichnisses {root_dir}: {e}")
+        logging.error(
+            f"Fehler beim Scannen des Wurzelverzeichnisses {root_dir}: {e}"
+        )
         return
 
     with get_connection_context() as conn:
@@ -197,7 +296,9 @@ def clean_cache(root_dir: Path) -> None:
             cursor = conn.execute("SELECT file_path FROM cache")
             cached_files = {row[0] for row in cursor.fetchall()}
         except sqlite3.Error as e:
-            logging.error(f"Fehler beim Abrufen der zwischengespeicherten Dateipfade: {e}")
+            logging.error(
+                f"Fehler beim Abrufen der zwischengespeicherten Dateipfade: {e}"
+            )
             conn.execute("ROLLBACK;")
             return
 
@@ -219,12 +320,19 @@ def clean_cache(root_dir: Path) -> None:
                     logging.error(f"Fehler beim Ausführen von VACUUM: {e}")
 
                 if USE_COLOR:
-                    message = f"{Fore.GREEN}Cache bereinigt. {len(files_to_remove)} Einträge entfernt.{Style.RESET_ALL}"
+                    message = (
+                        f"{Fore.GREEN}Cache bereinigt. "
+                        f"{len(files_to_remove)} Einträge entfernt.{Style.RESET_ALL}"
+                    )
                 else:
-                    message = f"Cache bereinigt. {len(files_to_remove)} Einträge entfernt."
+                    message = (
+                        f"Cache bereinigt. {len(files_to_remove)} Einträge entfernt."
+                    )
                 logging.info(message)
             except sqlite3.Error as e:
                 logging.error(f"Fehler beim Bereinigen des Caches: {e}")
                 conn.execute("ROLLBACK;")
         else:
-            logging.info("Kein Cache-Bereinigung erforderlich. Alle Einträge sind aktuell.")
+            logging.info(
+                "Keine Cache-Bereinigung erforderlich. Alle Einträge sind aktuell."
+            )

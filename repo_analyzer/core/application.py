@@ -5,33 +5,36 @@ import multiprocessing
 import sys
 import threading
 from pathlib import Path
-from typing import Any, Dict, Optional, Set, List
-import os
+from typing import Any, Dict, List, Optional, Set
 
 from repo_analyzer.cache.sqlite_cache import (
     clean_cache,
-    initialize_connection_pool,
+    close_all_connections,
     get_connection_context,
-    close_all_connections
+    initialize_connection_pool,
 )
-from repo_analyzer.cli.parser import parse_arguments, get_default_cache_path
+from repo_analyzer.cli.parser import get_default_cache_path, parse_arguments
+from repo_analyzer.config.config import Config
 from repo_analyzer.config.defaults import (
     CACHE_DB_FILE,
-    DEFAULT_EXCLUDED_FOLDERS,
     DEFAULT_EXCLUDED_FILES,
+    DEFAULT_EXCLUDED_FOLDERS,
 )
-from repo_analyzer.config.config import Config
 from repo_analyzer.core.summary import create_summary
 from repo_analyzer.logging.setup import setup_logging
 from repo_analyzer.output.output_factory import OutputFactory
 from repo_analyzer.traversal.traverser import get_directory_structure
 
-def initialize_cache_directory(cache_path: str) -> Path:
+MAX_SIZE_MULTIPLIER = 1024 * 1024
+DEFAULT_THREAD_MULTIPLIER = 2
+
+
+def initialize_cache_directory(cache_path: Path) -> Path:
     """
     Initialisiert das Cache-Verzeichnis.
 
     Args:
-        cache_path (str): Der vom Benutzer angegebene Pfad oder der Standardpfad.
+        cache_path (Path): Der vom Benutzer angegebene Pfad oder der Standardpfad.
 
     Returns:
         Path: Der Pfad zum Cache-Verzeichnis.
@@ -39,14 +42,14 @@ def initialize_cache_directory(cache_path: str) -> Path:
     Raises:
         SystemExit: Wenn das Verzeichnis nicht erstellt werden kann.
     """
-    cache_dir = Path(cache_path).expanduser().resolve()
     try:
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        logging.debug(f"Cache-Verzeichnis erstellt oder existiert bereits: {cache_dir}")
-    except Exception as e:
-        logging.error(f"Fehler beim Erstellen des Cache-Verzeichnisses '{cache_dir}': {e}")
+        cache_path.mkdir(parents=True, exist_ok=True)
+        logging.debug(f"Cache-Verzeichnis erstellt oder existiert bereits: {cache_path}")
+    except OSError as e:
+        logging.error(f"Fehler beim Erstellen des Cache-Verzeichnisses '{cache_path}': {e}")
         sys.exit(1)
-    return cache_dir
+    return cache_path
+
 
 def run() -> None:
     """
@@ -60,12 +63,20 @@ def run() -> None:
 
     # Initialisiere die Konfigurationsverwaltung
     config_manager = Config()
-    config_manager.load(args.config)
+    try:
+        config_manager.load(args.config)
+    except FileNotFoundError:
+        logging.error(f"Konfigurationsdatei nicht gefunden: {args.config}")
+        sys.exit(1)
+    except Exception as e:
+        logging.error(f"Fehler beim Laden der Konfigurationsdatei: {e}")
+        sys.exit(1)
     config = config_manager.data
 
     # Setup Logging mit Verbosity und optionalem Logfile
     setup_logging(args.verbose, args.log_file)
 
+    # Variablenzuweisung mit Typannotationen
     root_directory: Path = Path(args.root_directory).resolve()
     output_file: str = args.output
     include_binary: bool = args.include_binary
@@ -76,12 +87,12 @@ def run() -> None:
         ext.lower() if ext.startswith('.') else f'.{ext.lower()}'
         for ext in args.image_extensions
     }
-    include_summary: bool = args.include_summary  # Neue Option
+    include_summary: bool = args.include_summary
     output_format: str = args.format
     threads: Optional[int] = args.threads
     exclude_patterns: List[str] = args.exclude_patterns
-    encoding: str = args.encoding  # Neues Argument
-    cache_path: str = args.cache_path  # Neuer Parameter
+    encoding: str = args.encoding
+    cache_path: Path = Path(args.cache_path).expanduser().resolve()
 
     # Bestimmung des Hash-Algorithmus oder Deaktivierung
     if args.no_hash:
@@ -93,18 +104,17 @@ def run() -> None:
 
     # Dynamische Bestimmung der Thread-Anzahl, falls nicht angegeben
     if threads is None:
-        threads = multiprocessing.cpu_count() * 2
+        threads = multiprocessing.cpu_count() * DEFAULT_THREAD_MULTIPLIER
         logging.info(f"Dynamisch festgelegte Anzahl der Threads: {threads}")
 
     # Bestimmung der max_file_size mit Priorität: CLI-Argument > Config-Datei > Default
     try:
         if args.max_size is not None:
-            # Konvertierung von MB zu Bytes
-            max_file_size = args.max_size * 1024 * 1024
+            max_file_size = args.max_size * MAX_SIZE_MULTIPLIER
         else:
-            max_file_size = config_manager.get_max_size(None)  # Wird in get_max_size() behandelt
+            max_file_size = config_manager.get_max_size(cli_max_size=None)
 
-        logging.info(f"Maximale Dateigröße zum Lesen: {max_file_size / (1024 * 1024)} MB")
+        logging.info(f"Maximale Dateigröße zum Lesen: {max_file_size / MAX_SIZE_MULTIPLIER} MB")
     except ValueError as ve:
         logging.error(f"Fehler bei der Bestimmung der maximalen Dateigröße: {ve}")
         sys.exit(1)
@@ -137,8 +147,8 @@ def run() -> None:
     }.union(additional_image_extensions)
 
     logging.info(f"Durchsuche das Verzeichnis: {root_directory}")
-    logging.info(f"Ausgeschlossene Ordner: {', '.join(excluded_folders)}")
-    logging.info(f"Ausgeschlossene Dateien: {', '.join(excluded_files)}")
+    logging.info(f"Ausgeschlossene Ordner: {', '.join(sorted(excluded_folders))}")
+    logging.info(f"Ausgeschlossene Dateien: {', '.join(sorted(excluded_files))}")
     if not include_binary:
         logging.info("Binäre Dateien und Bilddateien sind ausgeschlossen.")
     else:
@@ -151,16 +161,24 @@ def run() -> None:
     logging.info(f"Ausschlussmuster: {', '.join(exclude_patterns)}")
     logging.info(f"Anzahl der Threads: {threads}")
     logging.info(f"Standard-Encoding: {encoding}")
-    logging.info(f"Cache-Pfad: {cache_path}")  # Logge den Cache-Pfad
+    logging.info(f"Cache-Pfad: {cache_path}")
 
     # Initialisiere das Cache-Verzeichnis
     cache_dir: Path = initialize_cache_directory(cache_path)
     cache_db_path: Path = cache_dir / CACHE_DB_FILE
     db_path_str = str(cache_db_path)
-    initialize_connection_pool(db_path_str)
+    try:
+        initialize_connection_pool(db_path_str)
+    except Exception as e:
+        logging.error(f"Fehler beim Initialisieren des Verbindungspools: {e}")
+        sys.exit(1)
 
     # Bereinige den Cache basierend auf dem Root-Verzeichnis
-    clean_cache(root_directory)
+    try:
+        clean_cache(root_directory)
+    except Exception as e:
+        logging.error(f"Fehler beim Bereinigen des Caches: {e}")
+        sys.exit(1)
 
     # Lock für den Cache
     cache_lock: threading.Lock = threading.Lock()
@@ -200,19 +218,24 @@ def run() -> None:
                     f"{' und die Zusammenfassung ' if include_summary else ''}"
                     f"wurden in '{output_file}' gespeichert."
                 )
-            except Exception as e:
+            except (OSError, IOError) as e:
                 logging.error(
                     f"Fehler beim Schreiben der Ausgabedatei nach Abbruch: {str(e)}"
                 )
             finally:
                 sys.exit(1)
+        except (OSError, IOError) as e:
+            logging.error(f"Ein IO-Fehler ist aufgetreten: {e}")
+            sys.exit(1)
         except Exception as e:
             logging.error(f"Ein unerwarteter Fehler ist aufgetreten: {e}")
             sys.exit(1)
 
         # Erstelle die Zusammenfassung
         try:
-            output_data: Dict[str, Any] = create_summary(structure, summary, include_summary, hash_algorithm)
+            output_data: Dict[str, Any] = create_summary(
+                structure, summary, include_summary, hash_algorithm
+            )
         except Exception as e:
             logging.error(f"Fehler beim Erstellen der Zusammenfassung: {e}")
             output_data = structure  # Fallback ohne Zusammenfassung
@@ -226,8 +249,11 @@ def run() -> None:
                 f"{' und die Zusammenfassung ' if include_summary else ''}"
                 f"wurden erfolgreich in '{output_file}' gespeichert."
             )
-        except Exception as e:
+        except (OSError, IOError) as e:
             logging.error(f"Fehler beim Schreiben der Ausgabedatei: {str(e)}")
 
     # Schließe die SQLite-Verbindungen nach Abschluss
-    close_all_connections()
+    try:
+        close_all_connections()
+    except Exception as e:
+        logging.error(f"Fehler beim Schließen der Verbindungen: {e}")
