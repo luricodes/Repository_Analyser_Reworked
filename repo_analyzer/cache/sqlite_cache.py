@@ -21,7 +21,7 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
-DEFAULT_CONNECTION_POOL_SIZE = 10
+DEFAULT_CONNECTION_POOL_SIZE = 3
 connection_pool = queue.Queue(maxsize=DEFAULT_CONNECTION_POOL_SIZE)
 pool_initialized = False
 pool_init_lock = threading.Lock()

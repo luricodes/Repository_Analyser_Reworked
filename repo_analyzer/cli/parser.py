@@ -151,7 +151,7 @@ def parse_arguments():
     parser.add_argument(
         "--pool-size",
         type=int,
-        default=2,  # Standardwert beibehalten
+        default=3,  # Standardwert beibehalten
         help=(
             "Größe des SQLite-Verbindungspools (Standard: 3). "
             "Anzahl der gleichzeitigen Datenbankverbindungen."
