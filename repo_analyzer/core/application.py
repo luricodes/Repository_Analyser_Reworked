@@ -19,14 +19,13 @@ from repo_analyzer.config.defaults import (
     CACHE_DB_FILE,
     DEFAULT_EXCLUDED_FILES,
     DEFAULT_EXCLUDED_FOLDERS,
-    DEFAULT_MAX_FILE_SIZE
+    DEFAULT_MAX_FILE_SIZE_MB
 )
 from repo_analyzer.core.summary import create_summary
 from repo_analyzer.logging.setup import setup_logging
 from repo_analyzer.output.output_factory import OutputFactory
 from repo_analyzer.traversal.traverser import get_directory_structure
 
-MAX_SIZE_MULTIPLIER = 1024 * 1024
 DEFAULT_THREAD_MULTIPLIER = 2
 
 
@@ -111,12 +110,8 @@ def run() -> None:
 
     # Bestimmung der max_file_size mit Priorität: CLI-Argument > Config-Datei > Default
     try:
-        if args.max_size is not None:
-            max_file_size = args.max_size * MAX_SIZE_MULTIPLIER
-        else:
-            max_file_size = config_manager.get_max_size(cli_max_size=None)
-
-        logging.info(f"Maximale Dateigröße zum Lesen: {max_file_size / MAX_SIZE_MULTIPLIER} MB")
+        max_file_size = config_manager.get_max_size(cli_max_size=args.max_size)
+        logging.info(f"Maximale Dateigröße zum Lesen: {max_file_size / (1024 * 1024)} MB")
     except ValueError as ve:
         logging.error(f"Fehler bei der Bestimmung der maximalen Dateigröße: {ve}")
         sys.exit(1)

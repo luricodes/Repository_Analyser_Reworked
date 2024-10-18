@@ -9,7 +9,12 @@ from typing import Any, Dict, Optional, Literal
 import yaml
 from colorama import Fore, Style
 
-from .defaults import DEFAULT_MAX_FILE_SIZE
+from .defaults import (
+    CACHE_DB_FILE,
+    DEFAULT_EXCLUDED_FILES,
+    DEFAULT_EXCLUDED_FOLDERS,
+    DEFAULT_MAX_FILE_SIZE_MB
+)
 from .loader import load_config
 
 
@@ -77,7 +82,7 @@ class Config:
         Bestimmt die maximale Dateigröße basierend auf CLI-Argumenten, Konfiguration und Standardwerten.
 
         Args:
-            cli_max_size (Optional[int]): Der vom Benutzer angegebene Wert für max_size in Bytes.
+            cli_max_size (Optional[int]): Der vom Benutzer angegebene Wert für max_size in MB.
 
         Returns:
             int: Die zu verwendende maximale Dateigröße in Bytes.
@@ -88,18 +93,19 @@ class Config:
         if cli_max_size is not None:
             if cli_max_size <= 0:
                 raise ValueError("Die maximale Dateigröße muss positiv sein.")
-            return cli_max_size
+            return cli_max_size * 1024 * 1024  # Umwandlung von MB in Bytes
 
         config_max_size = self.data.get('max_size')
         if config_max_size is not None:
             if isinstance(config_max_size, int) and config_max_size > 0:
-                return config_max_size
+                return config_max_size * 1024 * 1024  # Umwandlung von MB in Bytes
             else:
                 raise ValueError(
-                    "Der Wert für 'max_size' in der Konfigurationsdatei ist ungültig."
+                    "Der Wert für 'max_size' in der Konfigurationsdatei ist ungültig. "
+                    "Bitte geben Sie einen positiven ganzzahligen Wert in MB an."
                 )
 
-        return DEFAULT_MAX_FILE_SIZE
+        return DEFAULT_MAX_FILE_SIZE_MB * 1024 * 1024  # Standardwert in Bytes
 
     def save(self, config_path: str) -> None:
         """

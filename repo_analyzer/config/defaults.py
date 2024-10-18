@@ -32,6 +32,6 @@ DEFAULT_EXCLUDED_FILES = {
     '.repo_structure_cache',
 }
 
-DEFAULT_MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
+DEFAULT_MAX_FILE_SIZE_MB = 50  # 50 MB
 
 CACHE_DB_FILE = '.repo_structure_cache.db'
