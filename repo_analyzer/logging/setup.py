@@ -2,10 +2,14 @@
 
 import logging
 import sys
+import os
 from typing import Optional
 
 from colorama import Fore, Style, init as colorama_init
 from logging.handlers import RotatingFileHandler
+
+# Initialize colorama for colored console output once at module level
+colorama_init(autoreset=True)
 
 
 class ColorFormatter(logging.Formatter):
@@ -27,23 +31,34 @@ class ColorFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         color = self.LEVEL_COLORS.get(record.levelno, Fore.WHITE)
-        message = f"{color}{record.getMessage()}{Style.RESET_ALL}"
-        record.message = message
-        return super().format(record)
+        colored_message = f"{color}{record.getMessage()}{Style.RESET_ALL}"
+        original_message = record.getMessage()
+        record.message = colored_message
+        try:
+            formatted = super().format(record)
+        finally:
+            record.message = original_message  # Restore original message
+        return formatted
 
 
-def setup_logging(verbose: bool, log_file: Optional[str] = None) -> None:
+def setup_logging(
+    verbose: bool,
+    log_file: Optional[str] = None,
+    file_level: int = logging.DEBUG,
+    max_bytes: int = 5 * 1024 * 1024,
+    backup_count: int = 5,
+) -> None:
     """
     Konfiguriert das Logging-Modul mit separaten Handlern für Konsole und Datei.
 
     :param verbose: Wenn True, wird der Log-Level auf DEBUG gesetzt, sonst auf INFO.
     :param log_file: Optionaler Pfad zur Log-Datei.
+    :param file_level: Log-Level für den Datei-Handler. Standard: DEBUG.
+    :param max_bytes: Maximale Dateigröße in Bytes für den rotierenden Datei-Handler. Standard: 5 MB.
+    :param backup_count: Anzahl der Backup-Dateien für den rotierenden Datei-Handler. Standard: 5.
     """
-    # Initialize colorama for colored console output
-    colorama_init(autoreset=True)
-
-    LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
-    DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+    log_format = "%(asctime)s - %(levelname)s - %(message)s"
+    date_format = "%Y-%m-%d %H:%M:%S"
 
     log_level = logging.DEBUG if verbose else logging.INFO
     logger = logging.getLogger()
@@ -54,7 +69,7 @@ def setup_logging(verbose: bool, log_file: Optional[str] = None) -> None:
         logger.handlers.clear()
 
     # Format für Konsolen-Logs mit Farben
-    console_formatter = ColorFormatter(fmt=LOG_FORMAT, datefmt=DATE_FORMAT)
+    console_formatter = ColorFormatter(fmt=log_format, datefmt=date_format)
 
     # Console Handler
     console_handler = logging.StreamHandler(sys.stdout)
@@ -63,16 +78,24 @@ def setup_logging(verbose: bool, log_file: Optional[str] = None) -> None:
     logger.addHandler(console_handler)
 
     if log_file:
-        # Format für Datei-Logs ohne Farben
-        file_formatter = logging.Formatter(fmt=LOG_FORMAT, datefmt=DATE_FORMAT)
+        try:
+            # Sicherstellen, dass das Log-Verzeichnis existiert
+            log_dir = os.path.dirname(log_file)
+            if log_dir and not os.path.exists(log_dir):
+                os.makedirs(log_dir, exist_ok=True)
 
-        # Rotating File Handler
-        file_handler = RotatingFileHandler(
-            log_file,
-            maxBytes=5 * 1024 * 1024,  # 5 MB
-            backupCount=5,
-            encoding="utf-8",
-        )
-        file_handler.setLevel(logging.DEBUG)  # Datei-Handler speichert alle Logs
-        file_handler.setFormatter(file_formatter)
-        logger.addHandler(file_handler)
+            # Format für Datei-Logs ohne Farben
+            file_formatter = logging.Formatter(fmt=log_format, datefmt=date_format)
+
+            # Rotating File Handler
+            file_handler = RotatingFileHandler(
+                log_file,
+                maxBytes=max_bytes,
+                backupCount=backup_count,
+                encoding="utf-8",
+            )
+            file_handler.setLevel(file_level)  # Datei-Handler speichert alle Logs ab file_level
+            file_handler.setFormatter(file_formatter)
+            logger.addHandler(file_handler)
+        except (IOError, OSError) as e:
+            logger.error(f"Failed to set up file handler: {e}")
