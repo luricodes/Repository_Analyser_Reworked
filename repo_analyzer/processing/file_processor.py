@@ -13,14 +13,14 @@ from colorama import Fore, Style
 from ..cache.sqlite_cache import get_cached_entry, set_cached_entry
 from ..processing.hashing import compute_file_hash
 from ..utils.mime_type import is_binary
+from repo_analyzer.cache.sqlite_cache import get_connection_context
+
 
 def process_file(
     file_path: Path,
     max_file_size: int,
     include_binary: bool,
     image_extensions: Set[str],
-    conn: sqlite3.Connection,
-    lock: threading.Lock,
     encoding: str = 'utf-8',
     hash_algorithm: Optional[str] = "md5",
 ) -> Tuple[str, Optional[Dict[str, Any]]]:
@@ -34,18 +34,17 @@ def process_file(
         logging.warning(f"Konnte Metadaten nicht abrufen: {file_path} - {e}")
         return filename, None
 
-    # Überprüfung der Dateigröße
     if current_size > max_file_size:
         logging.info(f"Datei zu groß und wird ausgeschlossen: {file_path} ({current_size} Bytes)")
-        return filename, None  # Datei wird ausgeschlossen
+        return filename, None
 
     file_hash = None
-    cached_info = None
+    file_info = None
 
     if hash_algorithm is not None:
-        with lock:
+        with get_connection_context() as conn:
             cached_entry = get_cached_entry(conn, str(file_path.resolve()))
-        
+
         if cached_entry:
             cached_hash = cached_entry.get("file_hash")
             cached_algorithm = cached_entry.get("hash_algorithm")
@@ -57,9 +56,9 @@ def process_file(
                 cached_mtime == current_mtime and
                 cached_algorithm == hash_algorithm):
                 try:
-                    cached_info = cached_info
+                    file_info = cached_info
                     logging.debug(f"Cache-Treffer für Datei: {file_path}")
-                    return filename, cached_info
+                    return filename, file_info
                 except Exception as e:
                     logging.warning(f"Fehler beim Dekodieren der gecachten Dateiinfo für {file_path}: {e}")
             else:
@@ -67,27 +66,19 @@ def process_file(
         else:
             logging.debug(f"Kein Cache-Eintrag für Datei: {file_path}")
 
-        # Nur wenn kein gültiger Cache-Treffer vorliegt, den Hash berechnen
-        file_hash = compute_file_hash(file_path, algorithm=hash_algorithm)
-
+    file_hash = compute_file_hash(file_path, algorithm=hash_algorithm)
     file_extension = file_path.suffix.lower()
-
-    # Prüfe, ob die Datei eine Bilddatei ist
     is_image = file_extension in image_extensions
 
     try:
-        # Prüfe, ob die Datei binär ist
         binary = is_binary(file_path)
 
-        # Wenn die Datei binär oder ein Bild ist und include_binary nicht gesetzt ist, überspringen
         if (binary or is_image) and not include_binary:
             logging.debug(f"Ausschließen von {'binär' if binary else 'Bild'} Datei: {file_path}")
-            return filename, None  # Datei wird ausgeschlossen
+            return filename, None
 
-        file_info: Dict[str, Any] = {}
-
+        file_info = {}
         if binary:
-            # Verarbeitung binärer Dateien
             with open(file_path, 'rb') as f:
                 content = base64.b64encode(f.read(max_file_size)).decode('utf-8')
             file_info = {
@@ -96,7 +87,6 @@ def process_file(
             }
             logging.debug(f"Eingeschlossene binäre Datei: {file_path}")
         else:
-            # Verarbeitung von Textdateien
             with open(file_path, 'r', encoding=encoding) as f:
                 content = f.read(max_file_size)
             logging.debug(f"Eingelesene Textdatei: {file_path}")
@@ -114,28 +104,26 @@ def process_file(
         logging.error(f"Fehler beim Verarbeiten der Datei {file_path}: {e}")
         return filename, None
 
-    # Füge Metadaten hinzu
     try:
         file_info.update({
             "size": current_size,
-            "created": stat.st_birthtime,
+            "created": getattr(stat, 'st_birthtime', None),
             "modified": current_mtime,
             "permissions": oct(stat.st_mode)
         })
     except Exception as e:
         logging.warning(f"Konnte Metadaten nicht abrufen für: {file_path} - {e}")
 
-    # Aktualisiere den Cache nur, wenn Hashing aktiviert ist und Hash berechnet wurde
     if hash_algorithm is not None and file_hash is not None:
-            with lock:
-                set_cached_entry(
-                    conn,
-                    str(file_path.resolve()),
-                    file_hash,
-                    hash_algorithm,
-                    file_info,
-                    current_size,
-                    current_mtime
-                )
+        with get_connection_context() as conn:
+            set_cached_entry(
+                conn,
+                str(file_path.resolve()),
+                file_hash,
+                hash_algorithm,
+                file_info,
+                current_size,
+                current_mtime
+            )
 
     return filename, file_info

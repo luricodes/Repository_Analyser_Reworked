@@ -5,7 +5,7 @@ import multiprocessing
 import sys
 import threading
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, Optional, Set, List
 
 from repo_analyzer.cache.sqlite_cache import (
     clean_cache,
@@ -19,6 +19,7 @@ from repo_analyzer.config.defaults import (
     CACHE_DB_FILE,
     DEFAULT_EXCLUDED_FILES,
     DEFAULT_EXCLUDED_FOLDERS,
+    DEFAULT_MAX_FILE_SIZE
 )
 from repo_analyzer.core.summary import create_summary
 from repo_analyzer.logging.setup import setup_logging
@@ -93,6 +94,7 @@ def run() -> None:
     exclude_patterns: List[str] = args.exclude_patterns
     encoding: str = args.encoding
     cache_path: Path = Path(args.cache_path).expanduser().resolve()
+    pool_size: int = args.pool_size
 
     # Bestimmung des Hash-Algorithmus oder Deaktivierung
     if args.no_hash:
@@ -105,14 +107,13 @@ def run() -> None:
     # Dynamische Bestimmung der Thread-Anzahl, falls nicht angegeben
     if threads is None:
         threads = multiprocessing.cpu_count() * DEFAULT_THREAD_MULTIPLIER
-    logging.info(f"Dynamisch festgelegte Anzahl der Threads: {threads}")
+        logging.info(f"Dynamisch festgelegte Anzahl der Threads: {threads}")
 
     # Bestimmung der max_file_size mit Priorität: CLI-Argument > Config-Datei > Default
     try:
         if args.max_size is not None:
             max_file_size = args.max_size * MAX_SIZE_MULTIPLIER
         else:
-            # Korrigierter Methodenaufruf
             max_file_size = config_manager.get_max_size(cli_max_size=None)
 
         logging.info(f"Maximale Dateigröße zum Lesen: {max_file_size / MAX_SIZE_MULTIPLIER} MB")
@@ -167,9 +168,9 @@ def run() -> None:
     # Initialisiere das Cache-Verzeichnis
     cache_dir: Path = initialize_cache_directory(cache_path)
     cache_db_path: Path = cache_dir / CACHE_DB_FILE
-    db_path_str = str(cache_db_path)
+    db_path_str: str = str(cache_db_path)
     try:
-        initialize_connection_pool(db_path_str)
+        initialize_connection_pool(db_path_str, pool_size=pool_size)  # Pool-Größe übergeben
     except Exception as e:
         logging.error(f"Fehler beim Initialisieren des Verbindungspools: {e}")
         sys.exit(1)
@@ -181,33 +182,26 @@ def run() -> None:
         logging.error(f"Fehler beim Bereinigen des Caches: {e}")
         sys.exit(1)
 
-    # Lock für den Cache
-    cache_lock: threading.Lock = threading.Lock()
-
-    # Verwenden Sie den Kontextmanager, um eine Verbindung zu erhalten
-    with get_connection_context() as conn:
-        try:
-            structure, summary = get_directory_structure(
-                root_dir=root_directory,
-                max_file_size=max_file_size,
-                include_binary=include_binary,
-                excluded_folders=excluded_folders,
-                excluded_files=excluded_files,
-                follow_symlinks=follow_symlinks,
-                image_extensions=image_extensions,
-                exclude_patterns=exclude_patterns,
-                conn=conn,
-                lock=cache_lock,
-                threads=threads,
-                encoding=encoding,
-                hash_algorithm=hash_algorithm,
-            )
-        except KeyboardInterrupt:
-            logging.warning("Skript wurde vom Benutzer abgebrochen.")
-            sys.exit(1)
-        except Exception as e:
-            logging.error(f"Unerwarteter Fehler beim Durchlaufen der Verzeichnisstruktur: {e}")
-            sys.exit(1)
+    try:
+        structure, summary = get_directory_structure(
+            root_dir=root_directory,
+            max_file_size=max_file_size,
+            include_binary=include_binary,
+            excluded_folders=excluded_folders,
+            excluded_files=excluded_files,
+            follow_symlinks=follow_symlinks,
+            image_extensions=image_extensions,
+            exclude_patterns=exclude_patterns,
+            threads=threads,
+            encoding=encoding,
+            hash_algorithm=hash_algorithm,
+        )
+    except KeyboardInterrupt:
+        logging.warning("Skript wurde vom Benutzer abgebrochen.")
+        sys.exit(1)
+    except Exception as e:
+        logging.error(f"Unerwarteter Fehler beim Durchlaufen der Verzeichnisstruktur: {e}")
+        sys.exit(1)
 
     try:
         output_data: Dict[str, Any] = {}

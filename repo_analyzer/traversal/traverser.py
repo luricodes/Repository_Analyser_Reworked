@@ -12,6 +12,8 @@ from tqdm import tqdm
 
 from repo_analyzer.processing.file_processor import process_file
 from repo_analyzer.traversal.patterns import matches_patterns
+from repo_analyzer.cache.sqlite_cache import get_connection_context
+
 
 def recursive_traverse(
     root_dir: Path,
@@ -159,6 +161,7 @@ def count_total_files(
     _traverse_count(root_dir)
     return included, excluded
 
+
 def get_directory_structure(
     root_dir: Path,
     max_file_size: int,
@@ -168,36 +171,12 @@ def get_directory_structure(
     follow_symlinks: bool,
     image_extensions: Set[str],
     exclude_patterns: List[str],
-    conn: sqlite3.Connection,
-    lock: threading.Lock,
     threads: int,
     encoding: str = 'utf-8',
-    hash_algorithm: Optional[str] = "md5",  # Neuer Parameter
+    hash_algorithm: Optional[str] = "md5",
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    """
-    Erstellt die Verzeichnisstruktur als verschachteltes Dictionary.
-
-    Args:
-        root_dir (Path): Das Wurzelverzeichnis zum Traversieren.
-        max_file_size (int): Maximale Dateigröße in Bytes.
-        include_binary (bool): Gibt an, ob Binärdateien eingeschlossen werden sollen.
-        excluded_folders (Set[str]): Eine Menge von Ordnernamen, die ausgeschlossen werden sollen.
-        excluded_files (Set[str]): Eine Menge von Dateinamen, die ausgeschlossen werden sollen.
-        follow_symlinks (bool): Gibt an, ob symbolischen Links gefolgt werden sollen.
-        image_extensions (Set[str]): Eine Menge von Bilddateiendungen, die berücksichtigt werden sollen.
-        exclude_patterns (List[str]): Eine Liste von Mustern zum Ausschließen von Dateien und Ordnern.
-        conn (sqlite3.Connection): Eine SQLite-Verbindungsinstanz.
-        lock (threading.Lock): Ein Threading-Lock zur Synchronisation.
-        threads (int): Anzahl der Threads für die parallele Verarbeitung.
-        encoding (str, optional): Die Zeichenkodierung für die Verarbeitung. Standard ist 'utf-8'.
-        hash_algorithm (Optional[str], optional): Der Hash-Algorithmus oder None.
-
-    Returns:
-        Tuple[Dict[str, Any], Dict[str, Any]]: Ein Tupel bestehend aus der Verzeichnisstruktur und einer Zusammenfassung.
-    """
     dir_structure: Dict[str, Any] = {}
 
-    # Zähle alle relevanten Dateien für die Fortschrittsanzeige
     included_files, excluded_files_count = count_total_files(
         root_dir,
         excluded_folders,
@@ -208,16 +187,10 @@ def get_directory_structure(
     total_files: int = included_files + excluded_files_count
     excluded_percentage: float = (excluded_files_count / total_files * 100) if total_files else 0.0
 
-    logging.info(
-        f"{Fore.MAGENTA}Gesamtzahl der Dateien: {total_files}{Style.RESET_ALL}"
-    )
-    logging.info(
-        f"{Fore.YELLOW}Ausgeschlossene Dateien: {excluded_files_count} ({excluded_percentage:.2f}%){Style.RESET_ALL}"
-    )
-    logging.info(
-        f"{Fore.GREEN}Verarbeitete Dateien: {included_files}{Style.RESET_ALL}"
-    )
-
+    logging.info(f"Gesamtzahl der Dateien: {total_files}")
+    logging.info(f"Ausgeschlossene Dateien: {excluded_files_count} ({excluded_percentage:.2f}%)")
+    logging.info(f"Verarbeitete Dateien: {included_files}")
+    
     pbar: tqdm = tqdm(
         total=included_files,
         desc="Verarbeite Dateien",
@@ -227,7 +200,6 @@ def get_directory_structure(
 
     failed_files: List[Dict[str, str]] = []
 
-    # Sammle alle Dateien, die verarbeitet werden sollen
     files_to_process: List[Path] = recursive_traverse(
         root_dir,
         excluded_folders,
@@ -236,7 +208,6 @@ def get_directory_structure(
         follow_symlinks
     )
 
-    # Verwende ThreadPoolExecutor für parallele Verarbeitung
     with ThreadPoolExecutor(max_workers=threads) as executor:
         future_to_file: Dict[Future[Tuple[str, Any]], Path] = {}
         try:
@@ -247,117 +218,83 @@ def get_directory_structure(
                     max_file_size,
                     include_binary,
                     image_extensions,
-                    conn,
-                    lock,
                     encoding=encoding,
-                    hash_algorithm=hash_algorithm,  # Neuer Parameter
+                    hash_algorithm=hash_algorithm,
                 )
-                future_to_file[future] = file_path.parent
+                future_to_file[future] = file_path  # Korrektur hier
         except KeyboardInterrupt:
-            logging.warning(
-                f"{Fore.RED}\nAbbruch durch Benutzer. Versuche, laufende Aufgaben zu beenden...{Style.RESET_ALL}"
-            )
+            logging.warning("\nAbbruch durch Benutzer. Versuche, laufende Aufgaben zu beenden...")
             executor.shutdown(wait=False, cancel_futures=True)
             pbar.close()
-            raise  # Weiterreichen der Ausnahme, um sie im Hauptthread zu handhaben
+            raise
         except Exception as e:
-            logging.error(
-                f"{Fore.RED}Unerwarteter Fehler während des Einreichens von Aufgaben: {e}{Style.RESET_ALL}"
-            )
+            logging.error(f"Unerwarteter Fehler während des Einreichens von Aufgaben: {e}")
             executor.shutdown(wait=False, cancel_futures=True)
             pbar.close()
             raise
 
         try:
             for future in as_completed(future_to_file):
-                file_path_parent: Path = future_to_file[future]
+                file_path: Path = future_to_file[future]  # Korrektur hier
                 try:
                     filename: str
                     file_info: Any
                     filename, file_info = future.result()
                     if file_info is not None:
-                        # Erstelle die verschachtelte Struktur
                         try:
-                            relative_parent: Path = file_path_parent.relative_to(root_dir)
+                            relative_parent: Path = file_path.parent.relative_to(root_dir)
                         except ValueError:
-                            # Falls file_path_parent nicht relativ zu root_dir ist
-                            relative_parent = file_path_parent
+                            relative_parent = file_path.parent
 
                         current: Dict[str, Any] = dir_structure
                         for part in relative_parent.parts:
                             current = current.setdefault(part, {})
                         current[filename] = file_info
                 except Exception as e:
-                    # Finde den vollständigen Pfad zur Datei
                     try:
-                        filename: str = file_path_parent.name
-                        file_path_full: Path = file_path_parent / filename
-                    except Exception:
-                        file_path_full: str = str(file_path_parent)
-
-                    # Erstelle die verschachtelte Struktur mit Fehlerinformationen
-                    try:
-                        relative_parent: Path = file_path_parent.relative_to(root_dir)
+                        relative_parent: Path = file_path.parent.relative_to(root_dir)
                     except ValueError:
-                        relative_parent = Path(file_path_full).parent
+                        relative_parent = file_path.parent
 
                     current: Dict[str, Any] = dir_structure
                     for part in relative_parent.parts:
                         current = current.setdefault(part, {})
                     current[
-                        Path(file_path_full).name
-                        if isinstance(file_path_full, Path)
-                        else 'unknown'
+                        file_path.name
                     ] = {
                         "type": "error",
                         "content": f"<Fehler bei der Verarbeitung: {str(e)}>"
                     }
-                    logging.error(
-                        f"{Fore.RED}Fehler beim Verarbeiten der Datei {file_path_full}: {e}{Style.RESET_ALL}"
-                    )
+                    logging.error(f"Fehler beim Verarbeiten der Datei {file_path}: {e}")
                     failed_files.append(
-                        {"file": str(file_path_full), "error": str(e)}
+                        {"file": str(file_path), "error": str(e)}
                     )
                 finally:
                     pbar.update(1)
         except KeyboardInterrupt:
-            logging.warning(
-                f"{Fore.RED}\nAbbruch durch Benutzer während der Verarbeitung. Versuche, laufende Aufgaben zu beenden...{Style.RESET_ALL}"
-            )
+            logging.warning("\nAbbruch durch Benutzer während der Verarbeitung. Versuche, laufende Aufgaben zu beenden...")
             executor.shutdown(wait=False, cancel_futures=True)
             pbar.close()
             raise
 
     pbar.close()
 
-    # Erstelle die Zusammenfassung
     summary: Dict[str, Any] = {
         "total_files": total_files,
         "excluded_files": excluded_files_count,
         "included_files": included_files,
         "excluded_percentage": excluded_percentage,
-        "failed_files": failed_files  # Neue Liste für fehlgeschlagene Dateien
+        "failed_files": failed_files
     }
 
-    # Füge den verwendeten Hash-Algorithmus zur Zusammenfassung hinzu, wenn verwendet
     if hash_algorithm is not None:
         summary["hash_algorithm"] = hash_algorithm
 
-    # Logge eine Zusammenfassung der verarbeiteten und ausgeschlossenen Dateien
-    logging.info(f"{Fore.CYAN}Zusammenfassung:{Style.RESET_ALL}")
-    logging.info(
-        f"  {Fore.GREEN}Verarbeitete Dateien:{Style.RESET_ALL} {included_files}"
-    )
-    logging.info(
-        f"  {Fore.YELLOW}Ausgeschlossene Dateien:{Style.RESET_ALL} "
-        f"{excluded_files_count} ({excluded_percentage:.2f}%)"
-    )
-    logging.info(
-        f"  {Fore.RED}Fehlgeschlagene Dateien:{Style.RESET_ALL} {len(failed_files)}"
-    )
+    logging.info("Zusammenfassung:")
+    logging.info(f"  Verarbeitete Dateien: {included_files}")
+    logging.info(f"  Ausgeschlossene Dateien: {excluded_files_count} ({excluded_percentage:.2f}%)")
+    logging.info(f"  Fehlgeschlagene Dateien: {len(failed_files)}")
     if hash_algorithm is not None:
-        logging.info(
-            f"  {Fore.BLUE}Verwendeter Hash-Algorithmus:{Style.RESET_ALL} {hash_algorithm}"
-        )
+        logging.info(f"  Verwendeter Hash-Algorithmus: {hash_algorithm}")
 
     return dir_structure, summary

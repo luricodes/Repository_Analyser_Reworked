@@ -26,7 +26,7 @@ logging.basicConfig(
 )
 
 # Connection pool settings
-DEFAULT_CONNECTION_POOL_SIZE = 10  # Standardgröße des Verbindungspools
+DEFAULT_CONNECTION_POOL_SIZE = 10
 connection_pool = queue.Queue(maxsize=DEFAULT_CONNECTION_POOL_SIZE)
 pool_initialized = False
 pool_init_lock = threading.Lock()
@@ -63,7 +63,7 @@ def initialize_connection_pool(
                         )
                         # Setzen der PRAGMA-Einstellungen für bessere Leistung und Sicherheit
                         conn.execute("PRAGMA foreign_keys = ON;")
-                        conn.execute("PRAGMA journal_mode = WAL;")  # Erhöht die Parallelität
+                        conn.execute("PRAGMA journal_mode = WAL;")
                         conn.execute(
                             """
                             CREATE TABLE IF NOT EXISTS cache (
@@ -115,7 +115,7 @@ def get_connection_context() -> Generator[sqlite3.Connection, None, None]:
         conn = connection_pool.get(timeout=10)
         yield conn
     except queue.Empty:
-        logging.error("Keine verfügbaren Datenbankverbindungen im Pool.")
+        logging.error("Keine verfügbaren Datenbankverbindungen im Pool. Timeout erreicht.")
         raise
     finally:
         if conn:
@@ -301,11 +301,13 @@ def clean_cache(root_dir: Path) -> None:
             )
             conn.execute("ROLLBACK;")
             return
+        conn.execute("ROLLBACK;")
 
-        files_to_remove = cached_files - included_files
+    files_to_remove = cached_files - included_files
 
-        if files_to_remove:
-            try:
+    if files_to_remove:
+        try:
+            with get_connection_context() as conn:
                 conn.executemany(
                     "DELETE FROM cache WHERE file_path = ?",
                     ((fp,) for fp in files_to_remove),
@@ -319,20 +321,21 @@ def clean_cache(root_dir: Path) -> None:
                 except sqlite3.Error as e:
                     logging.error(f"Fehler beim Ausführen von VACUUM: {e}")
 
-                if USE_COLOR:
-                    message = (
-                        f"{Fore.GREEN}Cache bereinigt. "
-                        f"{len(files_to_remove)} Einträge entfernt.{Style.RESET_ALL}"
-                    )
-                else:
-                    message = (
-                        f"Cache bereinigt. {len(files_to_remove)} Einträge entfernt."
-                    )
-                logging.info(message)
-            except sqlite3.Error as e:
-                logging.error(f"Fehler beim Bereinigen des Caches: {e}")
+            if USE_COLOR:
+                message = (
+                    f"{Fore.GREEN}Cache bereinigt. "
+                    f"{len(files_to_remove)} Einträge entfernt.{Style.RESET_ALL}"
+                )
+            else:
+                message = (
+                    f"Cache bereinigt. {len(files_to_remove)} Einträge entfernt."
+                )
+            logging.info(message)
+        except sqlite3.Error as e:
+            logging.error(f"Fehler beim Bereinigen des Caches: {e}")
+            with get_connection_context() as conn:
                 conn.execute("ROLLBACK;")
-        else:
-            logging.info(
-                "Keine Cache-Bereinigung erforderlich. Alle Einträge sind aktuell."
-            )
+    else:
+        logging.info(
+            "Keine Cache-Bereinigung erforderlich. Alle Einträge sind aktuell."
+        )

@@ -147,6 +147,16 @@ def parse_arguments():
             "zusätzlich in diese Datei geschrieben."
         ),
     )
+    #Option für das Festlegen der SQLite-Verbindungspoolgröße
+    parser.add_argument(
+        "--pool-size",
+        type=int,
+        default=2,  # Standardwert beibehalten
+        help=(
+            "Größe des SQLite-Verbindungspools (Standard: 3). "
+            "Anzahl der gleichzeitigen Datenbankverbindungen."
+        ),
+    )
     # Neues Argument für Encoding
     parser.add_argument(
         "--encoding",
