@@ -105,13 +105,14 @@ def run() -> None:
     # Dynamische Bestimmung der Thread-Anzahl, falls nicht angegeben
     if threads is None:
         threads = multiprocessing.cpu_count() * DEFAULT_THREAD_MULTIPLIER
-        logging.info(f"Dynamisch festgelegte Anzahl der Threads: {threads}")
+    logging.info(f"Dynamisch festgelegte Anzahl der Threads: {threads}")
 
     # Bestimmung der max_file_size mit Priorität: CLI-Argument > Config-Datei > Default
     try:
         if args.max_size is not None:
             max_file_size = args.max_size * MAX_SIZE_MULTIPLIER
         else:
+            # Korrigierter Methodenaufruf
             max_file_size = config_manager.get_max_size(cli_max_size=None)
 
         logging.info(f"Maximale Dateigröße zum Lesen: {max_file_size / MAX_SIZE_MULTIPLIER} MB")
@@ -203,57 +204,32 @@ def run() -> None:
             )
         except KeyboardInterrupt:
             logging.warning("Skript wurde vom Benutzer abgebrochen.")
-            # Optional: Speichere die aktuelle Struktur bis zum Abbruchpunkt
-            try:
-                output_data: Dict[str, Any] = {}
-                if include_summary and summary:
-                    output_data["summary"] = summary
-                if structure:
-                    output_data["structure"] = structure
-
-                OutputFactory.get_output(output_format)(output_data, output_file)
-
-                logging.info(
-                    f"Der aktuelle Stand der Ordnerstruktur"
-                    f"{' und die Zusammenfassung ' if include_summary else ''}"
-                    f"wurden in '{output_file}' gespeichert."
-                )
-            except (OSError, IOError) as e:
-                logging.error(
-                    f"Fehler beim Schreiben der Ausgabedatei nach Abbruch: {str(e)}"
-                )
-            finally:
-                sys.exit(1)
-        except (OSError, IOError) as e:
-            logging.error(f"Ein IO-Fehler ist aufgetreten: {e}")
             sys.exit(1)
         except Exception as e:
-            logging.error(f"Ein unerwarteter Fehler ist aufgetreten: {e}")
+            logging.error(f"Unerwarteter Fehler beim Durchlaufen der Verzeichnisstruktur: {e}")
             sys.exit(1)
 
-        # Erstelle die Zusammenfassung
-        try:
-            output_data: Dict[str, Any] = create_summary(
-                structure, summary, include_summary, hash_algorithm
-            )
-        except Exception as e:
-            logging.error(f"Fehler beim Erstellen der Zusammenfassung: {e}")
-            output_data = structure  # Fallback ohne Zusammenfassung
-
-        # Schreibe die Struktur (und ggf. die Zusammenfassung) in die Ausgabedatei
-        try:
-            OutputFactory.get_output(output_format)(output_data, output_file)
-
-            logging.info(
-                f"Die Ordnerstruktur"
-                f"{' und die Zusammenfassung ' if include_summary else ''}"
-                f"wurden erfolgreich in '{output_file}' gespeichert."
-            )
-        except (OSError, IOError) as e:
-            logging.error(f"Fehler beim Schreiben der Ausgabedatei: {str(e)}")
-
-    # Schließe die SQLite-Verbindungen nach Abschluss
     try:
-        close_all_connections()
-    except Exception as e:
-        logging.error(f"Fehler beim Schließen der Verbindungen: {e}")
+        output_data: Dict[str, Any] = {}
+        if include_summary and summary:
+            output_data["summary"] = summary
+        if structure:
+            output_data["structure"] = structure
+
+        OutputFactory.get_output(output_format)(output_data, output_file)
+
+        logging.info(
+            f"Der aktuelle Stand der Ordnerstruktur"
+            f"{' und die Zusammenfassung ' if include_summary else ''}"
+            f"wurden in '{output_file}' gespeichert."
+        )
+    except (OSError, IOError) as e:
+        logging.error(
+            f"Fehler beim Schreiben der Ausgabedatei nach Abbruch: {str(e)}"
+        )
+        sys.exit(1)
+    finally:
+        try:
+            close_all_connections()
+        except Exception as e:
+            logging.error(f"Fehler beim Schließen der Verbindungen: {e}")
