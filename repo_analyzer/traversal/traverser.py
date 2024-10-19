@@ -10,7 +10,6 @@ from repo_analyzer.processing.file_processor import process_file
 from repo_analyzer.traversal.patterns import matches_patterns
 from colorama import Fore, Style
 
-# Importiere das shutdown_event aus dem neuen flags.py Modul
 from repo_analyzer.core.flags import shutdown_event
 
 def traverse_and_collect(
@@ -25,29 +24,35 @@ def traverse_and_collect(
     excluded = 0
     visited_paths: Set[Path] = set()
 
-    def _traverse(current_dir: Path) -> None:
-        nonlocal included, excluded
+    stack = [root_dir]
+
+    while stack:
         if shutdown_event.is_set():
-            return  # Früher Abbruch, wenn Shutdown angefordert wurde
+            logging.info("Traversal aborted due to shutdown event.")
+            break
+
+        current_dir = stack.pop()
         try:
             if follow_symlinks:
-                resolved_dir: Path = current_dir.resolve()
+                resolved_dir = current_dir.resolve()
                 if resolved_dir in visited_paths:
                     logging.warning(
                         f"{Fore.RED}Zirkulärer symbolischer Link gefunden: {current_dir}{Style.RESET_ALL}"
                     )
-                    return
+                    continue
                 visited_paths.add(resolved_dir)
         except Exception as e:
             logging.error(
                 f"{Fore.RED}Fehler beim Auflösen von {current_dir}: {e}{Style.RESET_ALL}"
             )
-            return
+            continue
 
         try:
             for entry in current_dir.iterdir():
                 if shutdown_event.is_set():
-                    return  # Früher Abbruch, wenn Shutdown angefordert wurde
+                    logging.info("Traversal aborted due to shutdown event.")
+                    break
+
                 if entry.is_dir():
                     if (
                         entry.name in excluded_folders
@@ -57,7 +62,7 @@ def traverse_and_collect(
                             f"{Fore.CYAN}Ausschließen von Ordner: {entry}{Style.RESET_ALL}"
                         )
                         continue
-                    _traverse(entry)
+                    stack.append(entry)
                 elif entry.is_file():
                     if (
                         entry.name in excluded_files
@@ -79,7 +84,6 @@ def traverse_and_collect(
                 f"{Fore.RED}Fehler beim Durchlaufen von {current_dir}: {e}{Style.RESET_ALL}"
             )
 
-    _traverse(root_dir)
     return paths, included, excluded
 
 def get_directory_structure(
@@ -285,10 +289,16 @@ def get_directory_structure_stream(
                         }
                 except Exception as e:
                     logging.error(f"Fehler beim Verarbeiten der Datei {file_path}: {e}")
-                    failed_files.append({
-                        "file": str(file_path),
-                        "error": str(e)
-                    })
+                    yield {
+                        "parent": str(file_path.parent.relative_to(root_dir)) if root_dir in file_path.parent.resolve().parents else str(file_path.parent),
+                        "filename": file_path.name,
+                        "info": {
+                            "type": "error",
+                            "content": f"Fehler beim Verarbeiten der Datei: {str(e)}",
+                            "exception_type": type(e).__name__,
+                            "exception_message": str(e)
+                        }
+                    }
                 finally:
                     pbar.update(1)
         except KeyboardInterrupt:

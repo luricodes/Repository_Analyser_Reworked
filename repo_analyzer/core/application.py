@@ -164,8 +164,8 @@ def run() -> None:
     try:
         if args.stream:
             # Streaming-Modus verwenden
-            if output_format == "json":
-                # JSON-Streaming verwenden
+            if output_format in ["json", "ndjson"]:
+                # JSON-Streaming oder NDJSON-Output verwenden
                 data_gen = get_directory_structure_stream(
                     root_dir=root_directory,
                     max_file_size=max_file_size,
@@ -180,22 +180,6 @@ def run() -> None:
                     hash_algorithm=hash_algorithm,
                 )
                 OutputFactory.get_output(output_format, streaming=True)(data_gen, output_file)
-            elif output_format == "ndjson":
-                # NDJSON-Output verwenden
-                data_gen = get_directory_structure_stream(
-                    root_dir=root_directory,
-                    max_file_size=max_file_size,
-                    include_binary=include_binary,
-                    excluded_folders=excluded_folders,
-                    excluded_files=excluded_files,
-                    follow_symlinks=follow_symlinks,
-                    image_extensions=image_extensions,
-                    exclude_patterns=exclude_patterns,
-                    threads=threads,
-                    encoding=encoding,
-                    hash_algorithm=hash_algorithm,
-                )
-                OutputFactory.get_output(output_format)(data_gen, output_file)
             else:
                 logging.error("Streaming-Modus ist nur für JSON und NDJSON verfügbar.")
                 sys.exit(1)

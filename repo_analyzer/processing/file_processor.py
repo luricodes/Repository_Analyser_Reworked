@@ -1,3 +1,5 @@
+# repo_analyzer/processing/file_processor.py
+
 import base64
 import logging
 import os
@@ -27,11 +29,20 @@ def process_file(
         current_mtime = stat.st_mtime
     except OSError as e:
         logger.error(f"Failed to get file stats for {file_path}: {e}")
-        return filename, {"type": "error", "content": f"Failed to get file stats: {str(e)}"}
+        return filename, {
+            "type": "error",
+            "content": f"Failed to get file stats: {str(e)}",
+            "exception_type": type(e).__name__,
+            "exception_message": str(e)
+        }
 
     if current_size > max_file_size:
         logger.info(f"File too large and will be excluded: {file_path} ({current_size} bytes)")
-        return filename, {"type": "excluded", "reason": "file_size", "size": current_size}
+        return filename, {
+            "type": "excluded",
+            "reason": "file_size",
+            "size": current_size
+        }
 
     file_hash = None
     file_info = None
@@ -71,20 +82,27 @@ def _check_cache(file_path: Path, current_size: int, current_mtime: float, hash_
         cached_mtime = cached_entry.get("mtime")
         cached_algorithm = cached_entry.get("hash_algorithm")
 
-        if (cached_size == current_size and
+        if (
+            cached_size == current_size and
             cached_mtime == current_mtime and
-            cached_algorithm == hash_algorithm):
+            cached_algorithm == hash_algorithm
+        ):
             logger.debug(f"Cache hit for file: {file_path}")
             return cached_entry.get("file_info")
 
     return None
 
-def _compute_hash(file_path: Path, hash_algorithm: str) -> Union[str, Dict[str, str]]:
+def _compute_hash(file_path: Path, hash_algorithm: str) -> Union[str, Dict[str, Any]]:
     try:
         return compute_file_hash(file_path, algorithm=hash_algorithm)
     except Exception as e:
         logger.error(f"Failed to compute hash for {file_path}: {e}")
-        return {"type": "error", "content": f"Failed to compute hash: {str(e)}"}
+        return {
+            "type": "error",
+            "content": f"Failed to compute hash: {str(e)}",
+            "exception_type": type(e).__name__,
+            "exception_message": str(e)
+        }
 
 def _process_file_content(file_path: Path, include_binary: bool, image_extensions: Set[str], max_file_size: int, encoding: str) -> Dict[str, Any]:
     file_extension = file_path.suffix.lower()
@@ -95,7 +113,10 @@ def _process_file_content(file_path: Path, include_binary: bool, image_extension
 
         if (binary or is_image) and not include_binary:
             logger.debug(f"Excluding {'binary' if binary else 'image'} file: {file_path}")
-            return {"type": "excluded", "reason": "binary_or_image"}
+            return {
+                "type": "excluded",
+                "reason": "binary_or_image"
+            }
 
         if binary:
             return _read_binary_file(file_path, max_file_size)
@@ -104,32 +125,82 @@ def _process_file_content(file_path: Path, include_binary: bool, image_extension
 
     except PermissionError as e:
         logger.error(f"Permission denied when reading file: {file_path}")
-        return {"type": "error", "content": f"Permission denied: {str(e)}"}
+        return {
+            "type": "error",
+            "content": f"Permission denied: {str(e)}",
+            "exception_type": type(e).__name__,
+            "exception_message": str(e)
+        }
     except IsADirectoryError:
         logger.error(f"Attempted to process a directory as a file: {file_path}")
-        return {"type": "error", "content": "Is a directory"}
+        return {
+            "type": "error",
+            "content": "Is a directory"
+        }
     except OSError as e:
         logger.error(f"OS error when processing file {file_path}: {e}")
-        return {"type": "error", "content": f"OS error: {str(e)}"}
+        return {
+            "type": "error",
+            "content": f"OS error: {str(e)}",
+            "exception_type": type(e).__name__,
+            "exception_message": str(e)
+        }
     except Exception as e:
         logger.error(f"Unexpected error when processing file {file_path}: {e}")
-        return {"type": "error", "content": f"Unexpected error: {str(e)}"}
+        return {
+            "type": "error",
+            "content": f"Unexpected error: {str(e)}",
+            "exception_type": type(e).__name__,
+            "exception_message": str(e)
+        }
 
 def _read_binary_file(file_path: Path, max_file_size: int) -> Dict[str, Any]:
-    with open(file_path, 'rb') as f:
-        content = base64.b64encode(f.read(max_file_size)).decode('utf-8')
-    logger.debug(f"Included binary file: {file_path}")
-    return {"type": "binary", "content": content}
+    try:
+        file_size = file_path.stat().st_size
+        if file_size > max_file_size:
+            logger.info(f"Binary file too large to include: {file_path} ({file_size} bytes)")
+            return {
+                "type": "excluded",
+                "reason": "binary_too_large",
+                "size": file_size
+            }
+        
+        with open(file_path, 'rb') as f:
+            content = base64.b64encode(f.read()).decode('utf-8')
+        logger.debug(f"Included binary file: {file_path}")
+        return {
+            "type": "binary",
+            "content": content
+        }
+    except Exception as e:
+        logger.error(f"Error reading binary file {file_path}: {e}")
+        return {
+            "type": "error",
+            "content": f"Failed to read binary file: {str(e)}",
+            "exception_type": type(e).__name__,
+            "exception_message": str(e)
+        }
 
 def _read_text_file(file_path: Path, max_file_size: int, encoding: str) -> Dict[str, Any]:
     try:
         with open(file_path, 'r', encoding=encoding) as f:
             content = f.read(max_file_size)
         logger.debug(f"Read text file: {file_path}")
-        return {"type": "text", "content": content}
+        return {
+            "type": "text",
+            "content": content
+        }
     except UnicodeDecodeError:
         logger.warning(f"UnicodeDecodeError for file {file_path}. Falling back to binary read.")
         return _read_binary_file(file_path, max_file_size)
+    except Exception as e:
+        logger.error(f"Error reading text file {file_path}: {e}")
+        return {
+            "type": "error",
+            "content": f"Failed to read text file: {str(e)}",
+            "exception_type": type(e).__name__,
+            "exception_message": str(e)
+        }
 
 def _add_metadata(file_info: Dict[str, Any], stat: os.stat_result) -> None:
     try:

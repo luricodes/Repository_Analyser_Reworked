@@ -5,11 +5,8 @@ import sys
 import os
 from typing import Optional
 
-from colorama import Fore, Style, init as colorama_init
+from colorama import Fore, Style
 from logging.handlers import RotatingFileHandler
-
-# Initialize colorama for colored console output once at module level
-colorama_init(autoreset=True)
 
 
 class ColorFormatter(logging.Formatter):
