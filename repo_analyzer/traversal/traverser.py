@@ -99,6 +99,7 @@ def get_directory_structure(
     encoding: str = 'utf-8',
     hash_algorithm: Optional[str] = "md5",
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+
     dir_structure: Dict[str, Any] = {}
 
     files_to_process, included_files, excluded_files_count = traverse_and_collect(
@@ -181,7 +182,7 @@ def get_directory_structure(
                         file_path.name
                     ] = {
                         "type": "error",
-                        "content": f"<Fehler bei der Verarbeitung: {str(e)}>"
+                        "content": f"Fehler bei der Verarbeitung: {str(e)}"
                     }
                     logging.error(f"Fehler beim Verarbeiten der Datei {file_path}: {e}")
                     failed_files.append(

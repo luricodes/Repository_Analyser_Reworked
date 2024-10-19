@@ -19,8 +19,13 @@ DEFAULT_EXCLUDED_FOLDERS = {
     'logs',
     'assets',
     'bower_components',
-    '.next'
-    'venv'
+    '.next',
+    'venv',
+    'tests',
+    'repo_analyzer.egg-info',
+    '__pycache__',
+    '.mypy_cache'
+
 }
 
 DEFAULT_EXCLUDED_FILES = {
