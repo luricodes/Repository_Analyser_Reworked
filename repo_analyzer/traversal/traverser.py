@@ -2,7 +2,7 @@
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Set, Tuple, Optional
+from typing import Any, Dict, List, Set, Tuple, Optional, Generator
 
 from colorama import Fore, Style
 from concurrent.futures import ThreadPoolExecutor, as_completed, Future
@@ -10,7 +10,6 @@ from tqdm import tqdm
 
 from repo_analyzer.processing.file_processor import process_file
 from repo_analyzer.traversal.patterns import matches_patterns
-
 
 def traverse_and_collect(
     root_dir: Path,
@@ -92,7 +91,6 @@ def traverse_and_collect(
 
     _traverse(root_dir)
     return paths, included, excluded
-
 
 def get_directory_structure(
     root_dir: Path,
@@ -180,8 +178,6 @@ def get_directory_structure(
             for future in as_completed(future_to_file):
                 file_path: Path = future_to_file[future]
                 try:
-                    filename: str
-                    file_info: Any
                     filename, file_info = future.result()
                     if file_info is not None:
                         try:
@@ -241,3 +237,114 @@ def get_directory_structure(
         logging.info(f"  Verwendeter Hash-Algorithmus: {hash_algorithm}")
 
     return dir_structure, summary
+
+def get_directory_structure_stream(
+    root_dir: Path,
+    max_file_size: int,
+    include_binary: bool,
+    excluded_folders: Set[str],
+    excluded_files: Set[str],
+    follow_symlinks: bool,
+    image_extensions: Set[str],
+    exclude_patterns: List[str],
+    threads: int,
+    encoding: str = 'utf-8',
+    hash_algorithm: Optional[str] = "md5",
+) -> Generator[Dict[str, Any], None, None]:
+    """
+    Ermittelt die Verzeichnisstruktur und liefert die Daten als Generator.
+
+    Args:
+        root_dir (Path): Das Wurzelverzeichnis zum Traversieren.
+        max_file_size (int): Maximale Dateigröße in Bytes.
+        include_binary (bool): Ob binäre Dateien einbezogen werden sollen.
+        excluded_folders (Set[str]): Ausgeschlossene Ordner.
+        excluded_files (Set[str]): Ausgeschlossene Dateien.
+        follow_symlinks (bool): Ob symbolischen Links gefolgt werden soll.
+        image_extensions (Set[str]): Zusätzliche Bilddateiendungen.
+        exclude_patterns (List[str]): Ausgeschlossene Muster.
+        threads (int): Anzahl der Threads für die parallele Verarbeitung.
+        encoding (str, optional): Standard-Encoding für Textdateien.
+        hash_algorithm (Optional[str], optional): Hash-Algorithmus zur Verifizierung.
+
+    Yields:
+        Dict[str, Any]: Ein Teil der Verzeichnisstruktur oder die Zusammenfassung.
+    """
+    files_to_process, included_files, excluded_files_count = traverse_and_collect(
+        root_dir,
+        excluded_folders,
+        excluded_files,
+        exclude_patterns,
+        follow_symlinks
+    )
+    total_files: int = included_files + excluded_files_count
+    excluded_percentage: float = (excluded_files_count / total_files * 100) if total_files else 0.0
+
+    logging.info(f"Gesamtzahl der Dateien: {total_files}")
+    logging.info(f"Ausgeschlossene Dateien: {excluded_files_count} ({excluded_percentage:.2f}%)")
+    logging.info(f"Verarbeitete Dateien: {included_files}")
+    
+    pbar: tqdm = tqdm(
+        total=included_files,
+        desc="Verarbeite Dateien",
+        unit="file",
+        dynamic_ncols=True
+    )
+
+    failed_files: List[Dict[str, str]] = []
+
+    with ThreadPoolExecutor(max_workers=threads) as executor:
+        future_to_file: Dict[Future[Tuple[str, Any]], Path] = {}
+        for file_path in files_to_process:
+            future = executor.submit(
+                process_file,
+                file_path,
+                max_file_size,
+                include_binary,
+                image_extensions,
+                encoding=encoding,
+                hash_algorithm=hash_algorithm,
+            )
+            future_to_file[future] = file_path
+
+        for future in as_completed(future_to_file):
+            file_path: Path = future_to_file[future]
+            try:
+                filename, file_info = future.result()
+                if file_info is not None:
+                    try:
+                        relative_parent: Path = file_path.parent.relative_to(root_dir)
+                    except ValueError:
+                        relative_parent = file_path.parent
+
+                    yield {
+                        "parent": str(relative_parent),
+                        "filename": filename,
+                        "info": file_info
+                    }
+            except Exception as e:
+                logging.error(f"Fehler beim Verarbeiten der Datei {file_path}: {e}")
+                failed_files.append({
+                    "file": str(file_path),
+                    "error": str(e)
+                })
+            finally:
+                pbar.update(1)
+
+    pbar.close()
+
+    # Zusammenfassung
+    summary: Dict[str, Any] = {
+        "total_files": total_files,
+        "excluded_files": excluded_files_count,
+        "included_files": included_files,
+        "excluded_percentage": excluded_percentage,
+        "failed_files": failed_files
+    }
+
+    if hash_algorithm is not None:
+        summary["hash_algorithm"] = hash_algorithm
+
+    yield {
+        "summary": summary
+    }

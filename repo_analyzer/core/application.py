@@ -1,4 +1,4 @@
-# core/application.py
+# repo_analyzer/core/application.py
 
 import logging
 import multiprocessing
@@ -20,10 +20,9 @@ from repo_analyzer.config.defaults import (
     DEFAULT_EXCLUDED_FOLDERS,
     DEFAULT_MAX_FILE_SIZE_MB
 )
-from repo_analyzer.core.summary import create_summary
 from repo_analyzer.logging.setup import setup_logging
 from repo_analyzer.output.output_factory import OutputFactory
-from repo_analyzer.traversal.traverser import get_directory_structure
+from repo_analyzer.traversal.traverser import get_directory_structure, get_directory_structure_stream
 
 DEFAULT_THREAD_MULTIPLIER = 2
 
@@ -146,36 +145,64 @@ def run() -> None:
         sys.exit(1)
 
     try:
-        structure, summary = get_directory_structure(
-            root_dir=root_directory,
-            max_file_size=max_file_size,
-            include_binary=include_binary,
-            excluded_folders=excluded_folders,
-            excluded_files=excluded_files,
-            follow_symlinks=follow_symlinks,
-            image_extensions=image_extensions,
-            exclude_patterns=exclude_patterns,
-            threads=threads,
-            encoding=encoding,
-            hash_algorithm=hash_algorithm,
-        )
-    except KeyboardInterrupt:
-        logging.warning("Skript wurde vom Benutzer abgebrochen.")
-        sys.exit(1)
-    except Exception as e:
-        logging.error(f"Unerwarteter Fehler beim Durchlaufen der Verzeichnisstruktur: {e}")
-        sys.exit(1)
-
-    try:
-        # Nutzung der create_summary-Funktion zur Erstellung von output_data
-        output_data: Dict[str, Any] = create_summary(
-            structure=structure,
-            summary=summary,
-            include_summary=include_summary,
-            hash_algorithm=hash_algorithm
-        )
-
-        OutputFactory.get_output(output_format)(output_data, output_file)
+        if args.stream:
+            # Streaming-Modus verwenden
+            if output_format == "json":
+                # JSON-Streaming verwenden
+                data_gen = get_directory_structure_stream(
+                    root_dir=root_directory,
+                    max_file_size=max_file_size,
+                    include_binary=include_binary,
+                    excluded_folders=excluded_folders,
+                    excluded_files=excluded_files,
+                    follow_symlinks=follow_symlinks,
+                    image_extensions=image_extensions,
+                    exclude_patterns=exclude_patterns,
+                    threads=threads,
+                    encoding=encoding,
+                    hash_algorithm=hash_algorithm,
+                )
+                OutputFactory.get_output(output_format, streaming=True)(data_gen, output_file)
+            elif output_format == "ndjson":
+                # NDJSON-Output verwenden
+                data_gen = get_directory_structure_stream(
+                    root_dir=root_directory,
+                    max_file_size=max_file_size,
+                    include_binary=include_binary,
+                    excluded_folders=excluded_folders,
+                    excluded_files=excluded_files,
+                    follow_symlinks=follow_symlinks,
+                    image_extensions=image_extensions,
+                    exclude_patterns=exclude_patterns,
+                    threads=threads,
+                    encoding=encoding,
+                    hash_algorithm=hash_algorithm,
+                )
+                OutputFactory.get_output(output_format)(data_gen, output_file)
+            else:
+                logging.error("Streaming-Modus ist nur für JSON und NDJSON verfügbar.")
+                sys.exit(1)
+        else:
+            # Standardmodus verwenden
+            structure, summary = get_directory_structure(
+                root_dir=root_directory,
+                max_file_size=max_file_size,
+                include_binary=include_binary,
+                excluded_folders=excluded_folders,
+                excluded_files=excluded_files,
+                follow_symlinks=follow_symlinks,
+                image_extensions=image_extensions,
+                exclude_patterns=exclude_patterns,
+                threads=threads,
+                encoding=encoding,
+                hash_algorithm=hash_algorithm,
+            )
+            # Generiere die zusammengefassten Daten
+            output_data: Dict[str, Any] = {
+                "summary": summary,
+                "structure": structure
+            } if include_summary else structure
+            OutputFactory.get_output(output_format)(output_data, output_file)
 
         logging.info(
             f"Der aktuelle Stand der Ordnerstruktur"
@@ -186,6 +213,9 @@ def run() -> None:
         logging.error(
             f"Fehler beim Schreiben der Ausgabedatei nach Abbruch: {str(e)}"
         )
+        sys.exit(1)
+    except ValueError as ve:
+        logging.error(f"Fehler beim Auswählen des Ausgabeformats: {ve}")
         sys.exit(1)
     finally:
         try:
