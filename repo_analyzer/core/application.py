@@ -1,4 +1,4 @@
-# repo_analyzer/core/application.py
+# core/application.py
 
 import logging
 import multiprocessing
@@ -27,20 +27,7 @@ from repo_analyzer.traversal.traverser import get_directory_structure
 
 DEFAULT_THREAD_MULTIPLIER = 2
 
-
 def initialize_cache_directory(cache_path: Path) -> Path:
-    """
-    Initialisiert das Cache-Verzeichnis.
-
-    Args:
-        cache_path (Path): Der vom Benutzer angegebene Pfad oder der Standardpfad.
-
-    Returns:
-        Path: Der Pfad zum Cache-Verzeichnis.
-
-    Raises:
-        SystemExit: Wenn das Verzeichnis nicht erstellt werden kann.
-    """
     try:
         cache_path.mkdir(parents=True, exist_ok=True)
         logging.debug(f"Cache-Verzeichnis erstellt oder existiert bereits: {cache_path}")
@@ -49,18 +36,9 @@ def initialize_cache_directory(cache_path: Path) -> Path:
         sys.exit(1)
     return cache_path
 
-
 def run() -> None:
-    """
-    Hauptfunktion zur Analyse von Repositorys.
-
-    Diese Funktion parst die Argumente, lädt die Konfiguration,
-    richtet das Logging ein, initialisiert den Cache, traversiert
-    das Verzeichnis und erstellt die Ausgabe.
-    """
     args = parse_arguments()
 
-    # Initialisiere die Konfigurationsverwaltung
     config_manager = Config()
     try:
         config_manager.load(args.config)
@@ -72,10 +50,8 @@ def run() -> None:
         sys.exit(1)
     config = config_manager.data
 
-    # Setup Logging mit Verbosity und optionalem Logfile
     setup_logging(args.verbose, args.log_file)
 
-    # Variablenzuweisung mit Typannotationen
     root_directory: Path = Path(args.root_directory).resolve()
     output_file: str = args.output
     include_binary: bool = args.include_binary
@@ -94,7 +70,6 @@ def run() -> None:
     cache_path: Path = Path(args.cache_path).expanduser().resolve()
     pool_size: int = args.pool_size
 
-    # Bestimmung des Hash-Algorithmus oder Deaktivierung
     if args.no_hash:
         hash_algorithm = None
         logging.info("Hash-Verifizierung ist deaktiviert.")
@@ -102,12 +77,10 @@ def run() -> None:
         hash_algorithm = args.hash_algorithm
         logging.info(f"Verwende Hash-Algorithmus: {hash_algorithm}")
 
-    # Dynamische Bestimmung der Thread-Anzahl, falls nicht angegeben
     if threads is None:
         threads = multiprocessing.cpu_count() * DEFAULT_THREAD_MULTIPLIER
         logging.info(f"Dynamisch festgelegte Anzahl der Threads: {threads}")
 
-    # Bestimmung der max_file_size mit Priorität: CLI-Argument > Config-Datei > Default
     try:
         max_file_size = config_manager.get_max_size(cli_max_size=args.max_size)
         logging.info(f"Maximale Dateigröße zum Lesen: {max_file_size / (1024 * 1024)} MB")
@@ -115,7 +88,6 @@ def run() -> None:
         logging.error(f"Fehler bei der Bestimmung der maximalen Dateigröße: {ve}")
         sys.exit(1)
 
-    # Kombiniere die standardmäßigen und zusätzlichen Ausschlüsse aus Argumenten und Konfigurationsdatei
     config_excluded_folders: Set[str] = set(config.get('exclude_folders', []))
     config_excluded_files: Set[str] = set(config.get('exclude_files', []))
     config_exclude_patterns: List[str] = config.get('exclude_patterns', [])
@@ -130,7 +102,6 @@ def run() -> None:
     )
     exclude_patterns: List[str] = exclude_patterns + config_exclude_patterns
 
-    # Kombiniere die standardmäßigen und zusätzlichen Bilddateiendungen
     image_extensions: Set[str] = {
         '.png',
         '.jpg',
@@ -159,17 +130,15 @@ def run() -> None:
     logging.info(f"Standard-Encoding: {encoding}")
     logging.info(f"Cache-Pfad: {cache_path}")
 
-    # Initialisiere das Cache-Verzeichnis
     cache_dir: Path = initialize_cache_directory(cache_path)
     cache_db_path: Path = cache_dir / CACHE_DB_FILE
     db_path_str: str = str(cache_db_path)
     try:
-        initialize_connection_pool(db_path_str, pool_size=pool_size)  # Pool-Größe übergeben
+        initialize_connection_pool(db_path_str, pool_size=pool_size)
     except Exception as e:
         logging.error(f"Fehler beim Initialisieren des Verbindungspools: {e}")
         sys.exit(1)
 
-    # Bereinige den Cache basierend auf dem Root-Verzeichnis
     try:
         clean_cache(root_directory)
     except Exception as e:
@@ -198,11 +167,13 @@ def run() -> None:
         sys.exit(1)
 
     try:
-        output_data: Dict[str, Any] = {}
-        if include_summary and summary:
-            output_data["summary"] = summary
-        if structure:
-            output_data["structure"] = structure
+        # Nutzung der create_summary-Funktion zur Erstellung von output_data
+        output_data: Dict[str, Any] = create_summary(
+            structure=structure,
+            summary=summary,
+            include_summary=include_summary,
+            hash_algorithm=hash_algorithm
+        )
 
         OutputFactory.get_output(output_format)(output_data, output_file)
 
