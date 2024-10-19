@@ -1,15 +1,15 @@
-# repo_analyzer/processing/file_processor.py
-
 import base64
 import logging
+import os
 from pathlib import Path
-from typing import Any, Dict, Optional, Set, Tuple
+from typing import Any, Dict, Optional, Set, Tuple, Union
 
-from ..cache.sqlite_cache import get_cached_entry, set_cached_entry
+from ..cache.sqlite_cache import get_cached_entry, set_cached_entry, get_connection_context
 from ..processing.hashing import compute_file_hash
 from ..utils.mime_type import is_binary
-from repo_analyzer.cache.sqlite_cache import get_connection_context
 
+# Create a module-specific logger
+logger = logging.getLogger(__name__)
 
 def process_file(
     file_path: Path,
@@ -25,43 +25,68 @@ def process_file(
         stat = file_path.stat()
         current_size = stat.st_size
         current_mtime = stat.st_mtime
-    except Exception as e:
-        logging.warning(f"Konnte Metadaten nicht abrufen: {file_path} - {e}")
-        return filename, None
+    except OSError as e:
+        logger.error(f"Failed to get file stats for {file_path}: {e}")
+        return filename, {"type": "error", "content": f"Failed to get file stats: {str(e)}"}
 
     if current_size > max_file_size:
-        logging.info(f"Datei zu groß und wird ausgeschlossen: {file_path} ({current_size} Bytes)")
-        return filename, None
+        logger.info(f"File too large and will be excluded: {file_path} ({current_size} bytes)")
+        return filename, {"type": "excluded", "reason": "file_size", "size": current_size}
 
     file_hash = None
     file_info = None
 
+    # Check cache
     if hash_algorithm is not None:
-        with get_connection_context() as conn:
-            cached_entry = get_cached_entry(conn, str(file_path.resolve()))
-
+        cached_entry = _check_cache(file_path, current_size, current_mtime, hash_algorithm)
         if cached_entry:
-            cached_hash = cached_entry.get("file_hash")
-            cached_algorithm = cached_entry.get("hash_algorithm")
-            cached_info = cached_entry.get("file_info")
-            cached_size = cached_entry.get("size")
-            cached_mtime = cached_entry.get("mtime")
+            return filename, cached_entry
 
-            if (cached_size == current_size and
-                cached_mtime == current_mtime and
-                cached_algorithm == hash_algorithm):
-                try:
-                    file_info = cached_info
-                    logging.debug(f"Cache-Treffer für Datei: {file_path}")
-                    return filename, file_info
-                except Exception as e:
-                    logging.warning(f"Fehler beim Dekodieren der gecachten Dateiinfo für {file_path}: {e}")
-            else:
-                logging.debug(f"Datei geändert seit letztem Cache-Eintrag: {file_path}")
-        else:
-            logging.debug(f"Kein Cache-Eintrag für Datei: {file_path}")
+    # Compute hash if needed
+    if hash_algorithm is not None:
+        file_hash = _compute_hash(file_path, hash_algorithm)
+        if isinstance(file_hash, dict) and file_hash.get("type") == "error":
+            return filename, file_hash
 
-    file_hash = compute_file_hash(file_path, algorithm=hash_algorithm)
+    # Process file content
+    file_info = _process_file_content(file_path, include_binary, image_extensions, max_file_size, encoding)
+    if file_info.get("type") == "error" or file_info.get("type") == "excluded":
+        return filename, file_info
+
+    # Add metadata
+    _add_metadata(file_info, stat)
+
+    # Update cache
+    if hash_algorithm is not None and file_hash is not None:
+        _update_cache(file_path, file_hash, hash_algorithm, file_info, current_size, current_mtime)
+
+    return filename, file_info
+
+def _check_cache(file_path: Path, current_size: int, current_mtime: float, hash_algorithm: str) -> Optional[Dict[str, Any]]:
+    with get_connection_context() as conn:
+        cached_entry = get_cached_entry(conn, str(file_path.resolve()))
+
+    if cached_entry:
+        cached_size = cached_entry.get("size")
+        cached_mtime = cached_entry.get("mtime")
+        cached_algorithm = cached_entry.get("hash_algorithm")
+
+        if (cached_size == current_size and
+            cached_mtime == current_mtime and
+            cached_algorithm == hash_algorithm):
+            logger.debug(f"Cache hit for file: {file_path}")
+            return cached_entry.get("file_info")
+
+    return None
+
+def _compute_hash(file_path: Path, hash_algorithm: str) -> Union[str, Dict[str, str]]:
+    try:
+        return compute_file_hash(file_path, algorithm=hash_algorithm)
+    except Exception as e:
+        logger.error(f"Failed to compute hash for {file_path}: {e}")
+        return {"type": "error", "content": f"Failed to compute hash: {str(e)}"}
+
+def _process_file_content(file_path: Path, include_binary: bool, image_extensions: Set[str], max_file_size: int, encoding: str) -> Dict[str, Any]:
     file_extension = file_path.suffix.lower()
     is_image = file_extension in image_extensions
 
@@ -69,56 +94,62 @@ def process_file(
         binary = is_binary(file_path)
 
         if (binary or is_image) and not include_binary:
-            logging.debug(f"Ausschließen von {'binär' if binary else 'Bild'} Datei: {file_path}")
-            return filename, None
+            logger.debug(f"Excluding {'binary' if binary else 'image'} file: {file_path}")
+            return {"type": "excluded", "reason": "binary_or_image"}
 
-        file_info = {}
         if binary:
-            with open(file_path, 'rb') as f:
-                content = base64.b64encode(f.read(max_file_size)).decode('utf-8')
-            file_info = {
-                "type": "binary",
-                "content": content
-            }
-            logging.debug(f"Eingeschlossene binäre Datei: {file_path}")
+            return _read_binary_file(file_path, max_file_size)
         else:
-            with open(file_path, 'r', encoding=encoding) as f:
-                content = f.read(max_file_size)
-            logging.debug(f"Eingelesene Textdatei: {file_path}")
-            file_info = {
-                "type": "text",
-                "content": content
-            }
-    except UnicodeDecodeError as e:
-        logging.warning(f"UnicodeDecodeError bei Datei {file_path}: {e}")
-        return filename, None
-    except (PermissionError, IsADirectoryError) as e:
-        logging.warning(f"Konnte den Inhalt nicht lesen: {file_path} - {e}")
-        return filename, None
-    except Exception as e:
-        logging.error(f"Fehler beim Verarbeiten der Datei {file_path}: {e}")
-        return filename, None
+            return _read_text_file(file_path, max_file_size, encoding)
 
+    except PermissionError as e:
+        logger.error(f"Permission denied when reading file: {file_path}")
+        return {"type": "error", "content": f"Permission denied: {str(e)}"}
+    except IsADirectoryError:
+        logger.error(f"Attempted to process a directory as a file: {file_path}")
+        return {"type": "error", "content": "Is a directory"}
+    except OSError as e:
+        logger.error(f"OS error when processing file {file_path}: {e}")
+        return {"type": "error", "content": f"OS error: {str(e)}"}
+    except Exception as e:
+        logger.error(f"Unexpected error when processing file {file_path}: {e}")
+        return {"type": "error", "content": f"Unexpected error: {str(e)}"}
+
+def _read_binary_file(file_path: Path, max_file_size: int) -> Dict[str, Any]:
+    with open(file_path, 'rb') as f:
+        content = base64.b64encode(f.read(max_file_size)).decode('utf-8')
+    logger.debug(f"Included binary file: {file_path}")
+    return {"type": "binary", "content": content}
+
+def _read_text_file(file_path: Path, max_file_size: int, encoding: str) -> Dict[str, Any]:
+    try:
+        with open(file_path, 'r', encoding=encoding) as f:
+            content = f.read(max_file_size)
+        logger.debug(f"Read text file: {file_path}")
+        return {"type": "text", "content": content}
+    except UnicodeDecodeError:
+        logger.warning(f"UnicodeDecodeError for file {file_path}. Falling back to binary read.")
+        return _read_binary_file(file_path, max_file_size)
+
+def _add_metadata(file_info: Dict[str, Any], stat: os.stat_result) -> None:
     try:
         file_info.update({
-            "size": current_size,
+            "size": stat.st_size,
             "created": getattr(stat, 'st_birthtime', None),
-            "modified": current_mtime,
+            "modified": stat.st_mtime,
             "permissions": oct(stat.st_mode)
         })
     except Exception as e:
-        logging.warning(f"Konnte Metadaten nicht abrufen für: {file_path} - {e}")
+        logger.warning(f"Could not retrieve complete metadata: {e}")
 
-    if hash_algorithm is not None and file_hash is not None:
-        with get_connection_context() as conn:
-            set_cached_entry(
-                conn,
-                str(file_path.resolve()),
-                file_hash,
-                hash_algorithm,
-                file_info,
-                current_size,
-                current_mtime
-            )
-
-    return filename, file_info
+def _update_cache(file_path: Path, file_hash: str, hash_algorithm: str, file_info: Dict[str, Any], current_size: int, current_mtime: float) -> None:
+    with get_connection_context() as conn:
+        set_cached_entry(
+            conn,
+            str(file_path.resolve()),
+            file_hash,
+            hash_algorithm,
+            file_info,
+            current_size,
+            current_mtime
+        )
