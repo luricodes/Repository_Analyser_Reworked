@@ -4,7 +4,7 @@ import fnmatch
 import logging
 import re
 from functools import lru_cache
-from typing import List, Pattern, Sequence
+from typing import Pattern, Sequence
 
 from colorama import Fore, Style
 

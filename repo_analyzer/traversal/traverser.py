@@ -1,8 +1,6 @@
 # repo_analyzer/traversal/traverser.py
 
 import logging
-import sqlite3
-import threading
 from pathlib import Path
 from typing import Any, Dict, List, Set, Tuple, Optional
 
@@ -12,7 +10,6 @@ from tqdm import tqdm
 
 from repo_analyzer.processing.file_processor import process_file
 from repo_analyzer.traversal.patterns import matches_patterns
-from repo_analyzer.cache.sqlite_cache import get_connection_context
 
 
 def traverse_and_collect(

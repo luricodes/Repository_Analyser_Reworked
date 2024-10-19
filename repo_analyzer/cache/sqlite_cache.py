@@ -337,4 +337,5 @@ def _shutdown():
     if _connection_pool_instance:
         _connection_pool_instance.close_all_connections()
 
+
 atexit.register(_shutdown)

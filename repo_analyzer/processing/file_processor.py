@@ -1,14 +1,9 @@
 # repo_analyzer/processing/file_processor.py
 
 import base64
-import json
 import logging
-import sqlite3
-import threading
 from pathlib import Path
 from typing import Any, Dict, Optional, Set, Tuple
-
-from colorama import Fore, Style
 
 from ..cache.sqlite_cache import get_cached_entry, set_cached_entry
 from ..processing.hashing import compute_file_hash

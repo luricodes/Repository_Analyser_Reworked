@@ -3,7 +3,6 @@
 import logging
 import multiprocessing
 import sys
-import threading
 from pathlib import Path
 from typing import Any, Dict, Optional, Set, List
 
