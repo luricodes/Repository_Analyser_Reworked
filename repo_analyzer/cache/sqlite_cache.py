@@ -1,5 +1,6 @@
-# Datei: repo_analyzer/cache/sqlite_cache.py
+# repo_analyzer/cache/sqlite_cache.py
 
+import atexit
 import json
 import logging
 import queue
@@ -22,111 +23,167 @@ logging.basicConfig(
 )
 
 DEFAULT_CONNECTION_POOL_SIZE = 3
-connection_pool = queue.Queue(maxsize=DEFAULT_CONNECTION_POOL_SIZE)
-pool_initialized = False
-pool_init_lock = threading.Lock()
+
+
+class ConnectionPool:
+    """Verwaltung eines Pools von SQLite-Verbindungen."""
+
+    _instance_lock = threading.Lock()
+    _instance: Optional['ConnectionPool'] = None
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            with cls._instance_lock:
+                if cls._instance is None:
+                    cls._instance = super(ConnectionPool, cls).__new__(cls)
+        return cls._instance
+
+    def __init__(self, db_path: str, pool_size: Optional[int] = None) -> None:
+        if hasattr(self, '_initialized') and self._initialized:
+            return
+        self.pool_size = pool_size if pool_size is not None else DEFAULT_CONNECTION_POOL_SIZE
+        if not isinstance(self.pool_size, int) or self.pool_size <= 0:
+            logging.error("pool_size muss eine positive ganze Zahl sein.")
+            sys.exit(1)
+        self.pool = queue.Queue(maxsize=self.pool_size)
+        self.pool_lock = threading.Lock()
+        self._initialize_pool(db_path)
+        self._initialized = True
+
+    def _initialize_pool(self, db_path: str) -> None:
+        with self.pool_lock:
+            for _ in range(self.pool_size):
+                try:
+                    conn = sqlite3.connect(
+                        db_path,
+                        check_same_thread=False
+                    )
+                    conn.execute("PRAGMA foreign_keys = ON;")
+                    conn.execute("PRAGMA journal_mode = WAL;")
+                    conn.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS cache (
+                            file_path TEXT PRIMARY KEY,
+                            file_hash TEXT,
+                            hash_algorithm TEXT,
+                            file_info TEXT,
+                            size INTEGER,
+                            mtime REAL
+                        )
+                        """
+                    )
+                    conn.execute(
+                        """
+                        CREATE INDEX IF NOT EXISTS idx_hash_algorithm
+                        ON cache(hash_algorithm);
+                        """
+                    )
+                    self.pool.put(conn)
+                except sqlite3.Error as e:
+                    logging.error(
+                        f"Fehler beim Initialisieren der Datenbankverbindung: {e}"
+                    )
+                    sys.exit(1)
+            logging.info(
+                f"Datenbankverbindungspool mit {self.pool_size} "
+                "Verbindungen initialisiert."
+            )
+
+    @contextmanager
+    def get_connection_context(self) -> Generator[sqlite3.Connection, None, None]:
+        try:
+            conn = self.pool.get(timeout=10)
+            if not self._validate_connection(conn):
+                logging.warning("Verbindung ist ungültig. Neue Verbindung wird erstellt.")
+                conn = self._create_new_connection(conn)
+            yield conn
+        except queue.Empty:
+            logging.error("Keine verfügbaren Datenbankverbindungen im Pool. Timeout erreicht.")
+            raise
+        finally:
+            if conn:
+                self.pool.put(conn)
+
+    def _validate_connection(self, conn: sqlite3.Connection) -> bool:
+        try:
+            conn.execute("SELECT 1;")
+            return True
+        except sqlite3.Error:
+            return False
+
+    def _create_new_connection(self, old_conn: sqlite3.Connection) -> sqlite3.Connection:
+        try:
+            old_conn.close()
+            new_conn = sqlite3.connect(
+                old_conn.database,
+                check_same_thread=False
+            )
+            new_conn.execute("PRAGMA foreign_keys = ON;")
+            new_conn.execute("PRAGMA journal_mode = WAL;")
+            return new_conn
+        except sqlite3.Error as e:
+            logging.error(f"Fehler beim Erstellen einer neuen Datenbankverbindung: {e}")
+            sys.exit(1)
+
+    def close_all_connections(self, exclude_conn: Optional[sqlite3.Connection] = None) -> None:
+        closed_connections = 0
+        while not self.pool.empty():
+            try:
+                conn = self.pool.get_nowait()
+                if conn != exclude_conn:
+                    conn.close()
+                    closed_connections += 1
+                else:
+                    self.pool.put(conn)
+            except queue.Empty:
+                break
+            except sqlite3.Error as e:
+                logging.error(
+                    f"Fehler beim Schließen der Datenbankverbindung: {e}"
+                )
+        logging.info(
+            f"Alle {closed_connections} Datenbankverbindungen im Pool wurden geschlossen."
+        )
+
+
+# Instanz des Verbindungspools
+_connection_pool_instance: Optional[ConnectionPool] = None
+_pool_lock = threading.Lock()
 
 
 def initialize_connection_pool(
     db_path: str,
     pool_size: Optional[int] = None
 ) -> None:
-    global pool_initialized
-    if not pool_initialized:
-        with pool_init_lock:
-            if not pool_initialized:
-                actual_pool_size = (
-                    pool_size
-                    if pool_size is not None
-                    else DEFAULT_CONNECTION_POOL_SIZE
-                )
-                if not isinstance(actual_pool_size, int) or actual_pool_size <= 0:
-                    logging.error("pool_size muss eine positive ganze Zahl sein.")
-                    sys.exit(1)
-                for _ in range(actual_pool_size):
-                    try:
-                        conn = sqlite3.connect(
-                            db_path,
-                            check_same_thread=False
-                        )
-                        conn.execute("PRAGMA foreign_keys = ON;")
-                        conn.execute("PRAGMA journal_mode = WAL;")
-                        conn.execute(
-                            """
-                            CREATE TABLE IF NOT EXISTS cache (
-                                file_path TEXT PRIMARY KEY,
-                                file_hash TEXT,
-                                hash_algorithm TEXT,
-                                file_info TEXT,
-                                size INTEGER,
-                                mtime REAL
-                            )
-                            """
-                        )
-                        conn.execute(
-                            """
-                            CREATE INDEX IF NOT EXISTS idx_hash_algorithm
-                            ON cache(hash_algorithm);
-                            """
-                        )
-                        connection_pool.put(conn)
-                    except sqlite3.Error as e:
-                        logging.error(
-                            f"Fehler beim Initialisieren der Datenbankverbindung: {e}"
-                        )
-                        sys.exit(1)
-                pool_initialized = True
-                logging.info(
-                    f"Datenbankverbindungspool mit {actual_pool_size} "
-                    "Verbindungen initialisiert."
-                )
+    global _connection_pool_instance
+    if _connection_pool_instance is None:
+        with _pool_lock:
+            if _connection_pool_instance is None:
+                _connection_pool_instance = ConnectionPool(db_path, pool_size)
+    else:
+        logging.info("Verbindungspool ist bereits initialisiert.")
 
 
 @contextmanager
 def get_connection_context() -> Generator[sqlite3.Connection, None, None]:
-    if not pool_initialized:
+    if _connection_pool_instance is None:
         logging.error(
             "Verbindungspool ist nicht initialisiert. "
             "Bitte rufe initialize_connection_pool auf."
         )
         raise RuntimeError("Verbindungspool nicht initialisiert.")
-    conn = None
-    try:
-        conn = connection_pool.get(timeout=10)
+    with _connection_pool_instance.get_connection_context() as conn:
         yield conn
-    except queue.Empty:
-        logging.error("Keine verfügbaren Datenbankverbindungen im Pool. Timeout erreicht.")
-        raise
-    finally:
-        if conn:
-            connection_pool.put(conn)
 
 
 def close_all_connections(exclude_conn: Optional[sqlite3.Connection] = None) -> None:
-    if not pool_initialized:
+    if _connection_pool_instance is not None:
+        _connection_pool_instance.close_all_connections(exclude_conn)
+    else:
         logging.warning(
             "Verbindungspool wurde nicht initialisiert. "
             "Keine Verbindungen zu schließen."
         )
-        return
-    closed_connections = 0
-    while not connection_pool.empty():
-        try:
-            conn = connection_pool.get_nowait()
-            if conn != exclude_conn:
-                conn.close()
-                closed_connections += 1
-            else:
-                connection_pool.put(conn)
-        except queue.Empty:
-            break
-        except sqlite3.Error as e:
-            logging.error(
-                f"Fehler beim Schließen der Datenbankverbindung: {e}"
-            )
-    logging.info(
-        f"Alle {closed_connections} Datenbankverbindungen im Pool wurden geschlossen."
-    )
 
 
 def get_cached_entry(
@@ -156,7 +213,7 @@ def get_cached_entry(
                 )
                 conn.execute(
                     "DELETE FROM cache WHERE file_path = ?",
-                    (absolute_file_path,)
+                    (absolute_file_path,),
                 )
                 conn.commit()
                 return None
@@ -212,7 +269,7 @@ def set_cached_entry(
 
 
 def clean_cache(root_dir: Path) -> None:
-    if not pool_initialized:
+    if _connection_pool_instance is None:
         logging.error(
             "Verbindungspool ist nicht initialisiert. Bitte rufe initialize_connection_pool auf."
         )
@@ -272,3 +329,11 @@ def clean_cache(root_dir: Path) -> None:
         logging.info(
             "Keine Cache-Bereinigung erforderlich. Alle Einträge sind aktuell."
         )
+
+
+# Automatisches Schließen aller Verbindungen beim Programmende
+def _shutdown():
+    if _connection_pool_instance:
+        _connection_pool_instance.close_all_connections()
+
+atexit.register(_shutdown)
