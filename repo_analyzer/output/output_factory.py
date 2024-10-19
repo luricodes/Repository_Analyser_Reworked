@@ -5,7 +5,7 @@ from typing import Callable, Dict, Any
 from .json_output import output_to_json, output_to_json_stream
 from .yaml_output import output_to_yaml
 from .xml_output import output_to_xml
-from .ndjson_output import output_to_ndjson  # Neues Import
+from .ndjson_output import output_to_ndjson
 
 class OutputFactory:
     """
@@ -14,10 +14,10 @@ class OutputFactory:
 
     _output_methods: Dict[str, Callable[..., None]] = {
         "json": output_to_json,
-        "json_stream": output_to_json_stream,  # Streaming-Modus
+        "json_stream": output_to_json_stream,
         "yaml": output_to_yaml,
         "xml": output_to_xml,
-        "ndjson": output_to_ndjson,  # Neues Ausgabeformat
+        "ndjson": output_to_ndjson,
     }
 
     @classmethod

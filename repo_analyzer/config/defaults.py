@@ -20,6 +20,7 @@ DEFAULT_EXCLUDED_FOLDERS = {
     'assets',
     'bower_components',
     '.next'
+    'venv'
 }
 
 DEFAULT_EXCLUDED_FILES = {
@@ -32,6 +33,6 @@ DEFAULT_EXCLUDED_FILES = {
     '.repo_structure_cache',
 }
 
-DEFAULT_MAX_FILE_SIZE_MB = 50  # 50 MB
+DEFAULT_MAX_FILE_SIZE_MB = 50  #Megabyte
 
 CACHE_DB_FILE = '.repo_structure_cache.db'
