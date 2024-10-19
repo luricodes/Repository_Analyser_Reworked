@@ -10,20 +10,15 @@ import threading
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, Generator, Optional, Set
+from colorama import Fore, Style
 
-from colorama import Fore, Style, init as colorama_init
-
-colorama_init(autoreset=True)
 
 USE_COLOR = sys.stdout.isatty()
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+# Erstelle einen spezifischen Logger für dieses Modul
+logger = logging.getLogger(__name__)
 
 DEFAULT_CONNECTION_POOL_SIZE = 3
-
 
 class ConnectionPool:
     """Verwaltung eines Pools von SQLite-Verbindungen."""
@@ -43,7 +38,7 @@ class ConnectionPool:
             return
         self.pool_size = pool_size if pool_size is not None else DEFAULT_CONNECTION_POOL_SIZE
         if not isinstance(self.pool_size, int) or self.pool_size <= 0:
-            logging.error("pool_size muss eine positive ganze Zahl sein.")
+            logger.error("pool_size muss eine positive ganze Zahl sein.")
             sys.exit(1)
         self.pool = queue.Queue(maxsize=self.pool_size)
         self.pool_lock = threading.Lock()
@@ -80,11 +75,11 @@ class ConnectionPool:
                     )
                     self.pool.put(conn)
                 except sqlite3.Error as e:
-                    logging.error(
+                    logger.error(
                         f"Fehler beim Initialisieren der Datenbankverbindung: {e}"
                     )
                     sys.exit(1)
-            logging.info(
+            logger.info(
                 f"Datenbankverbindungspool mit {self.pool_size} "
                 "Verbindungen initialisiert."
             )
@@ -95,11 +90,11 @@ class ConnectionPool:
         try:
             conn = self.pool.get(timeout=10)
             if not self._validate_connection(conn):
-                logging.warning("Verbindung ist ungültig. Neue Verbindung wird erstellt.")
+                logger.warning("Verbindung ist ungültig. Neue Verbindung wird erstellt.")
                 conn = self._create_new_connection(conn)
             yield conn
         except queue.Empty:
-            logging.error("Keine verfügbaren Datenbankverbindungen im Pool. Timeout erreicht.")
+            logger.error("Keine verfügbaren Datenbankverbindungen im Pool. Timeout erreicht.")
             raise
         finally:
             if conn:
@@ -123,7 +118,7 @@ class ConnectionPool:
             new_conn.execute("PRAGMA journal_mode = WAL;")
             return new_conn
         except sqlite3.Error as e:
-            logging.error(f"Fehler beim Erstellen einer neuen Datenbankverbindung: {e}")
+            logger.error(f"Fehler beim Erstellen einer neuen Datenbankverbindung: {e}")
             sys.exit(1)
 
     def close_all_connections(self, exclude_conn: Optional[sqlite3.Connection] = None) -> None:
@@ -139,10 +134,10 @@ class ConnectionPool:
             except queue.Empty:
                 break
             except sqlite3.Error as e:
-                logging.error(
+                logger.error(
                     f"Fehler beim Schließen der Datenbankverbindung: {e}"
                 )
-        logging.info(
+        logger.info(
             f"Alle {closed_connections} Datenbankverbindungen im Pool wurden geschlossen."
         )
 
@@ -162,13 +157,13 @@ def initialize_connection_pool(
             if _connection_pool_instance is None:
                 _connection_pool_instance = ConnectionPool(db_path, pool_size)
     else:
-        logging.info("Verbindungspool ist bereits initialisiert.")
+        logger.info("Verbindungspool ist bereits initialisiert.")
 
 
 @contextmanager
 def get_connection_context() -> Generator[sqlite3.Connection, None, None]:
     if _connection_pool_instance is None:
-        logging.error(
+        logger.error(
             "Verbindungspool ist nicht initialisiert. "
             "Bitte rufe initialize_connection_pool auf."
         )
@@ -181,7 +176,7 @@ def close_all_connections(exclude_conn: Optional[sqlite3.Connection] = None) -> 
     if _connection_pool_instance is not None:
         _connection_pool_instance.close_all_connections(exclude_conn)
     else:
-        logging.warning(
+        logger.warning(
             "Verbindungspool wurde nicht initialisiert. "
             "Keine Verbindungen zu schließen."
         )
@@ -205,11 +200,11 @@ def get_cached_entry(
             file_hash, hash_algorithm, file_info_json, size, mtime = result
             try:
                 file_info = json.loads(file_info_json)
-                logging.debug(
+                logger.debug(
                     f"Cache-Treffer für Datei: {absolute_file_path} mit Hash: {file_hash}"
                 )
             except json.JSONDecodeError as e:
-                logging.error(
+                logger.error(
                     f"Fehler beim Parsen von file_info für {absolute_file_path}: {e}"
                 )
                 conn.execute(
@@ -226,7 +221,7 @@ def get_cached_entry(
                 "mtime": mtime
             }
     except sqlite3.Error as e:
-        logging.error(
+        logger.error(
             f"Fehler beim Abrufen des zwischengespeicherten Eintrags für {absolute_file_path}: {e}"
         )
     return None
@@ -264,14 +259,14 @@ def set_cached_entry(
         )
         conn.commit()
     except sqlite3.Error as e:
-        logging.error(
+        logger.error(
             f"Fehler beim Setzen des zwischengespeicherten Eintrags für {absolute_file_path}: {e}"
         )
 
 
 def clean_cache(root_dir: Path) -> None:
     if _connection_pool_instance is None:
-        logging.error(
+        logger.error(
             "Verbindungspool ist nicht initialisiert. Bitte rufe initialize_connection_pool auf."
         )
         raise RuntimeError("Verbindungspool nicht initialisiert.")
@@ -282,7 +277,7 @@ def clean_cache(root_dir: Path) -> None:
             if p.is_file():
                 included_files.add(str(p.resolve()))
     except Exception as e:
-        logging.error(f"Fehler beim Scannen des Wurzelverzeichnisses {root_dir}: {e}")
+        logger.error(f"Fehler beim Scannen des Wurzelverzeichnisses {root_dir}: {e}")
         return
 
     with get_connection_context() as conn:
@@ -290,7 +285,7 @@ def clean_cache(root_dir: Path) -> None:
             cursor = conn.execute("SELECT file_path FROM cache")
             cached_files = {row[0] for row in cursor.fetchall()}
         except sqlite3.Error as e:
-            logging.error(
+            logger.error(
                 f"Fehler beim Abrufen der zwischengespeicherten Dateipfade: {e}"
             )
             return
@@ -310,9 +305,9 @@ def clean_cache(root_dir: Path) -> None:
                 if len(files_to_remove) >= 10:  # Beispielschwelle
                     try:
                         conn.execute("VACUUM;")
-                        logging.info("VACUUM ausgeführt, Datenbankgröße reduziert.")
+                        logger.info("VACUUM ausgeführt, Datenbankgröße reduziert.")
                     except sqlite3.Error as e:
-                        logging.error(f"Fehler beim Ausführen von VACUUM: {e}")
+                        logger.error(f"Fehler beim Ausführen von VACUUM: {e}")
 
             if USE_COLOR:
                 message = (
@@ -323,11 +318,11 @@ def clean_cache(root_dir: Path) -> None:
                 message = (
                     f"Cache bereinigt. {len(files_to_remove)} Einträge entfernt."
                 )
-            logging.info(message)
+            logger.info(message)
         except sqlite3.Error as e:
-            logging.error(f"Fehler beim Bereinigen des Caches: {e}")
+            logger.error(f"Fehler beim Bereinigen des Caches: {e}")
     else:
-        logging.info(
+        logger.info(
             "Keine Cache-Bereinigung erforderlich. Alle Einträge sind aktuell."
         )
 

@@ -23,6 +23,7 @@ from repo_analyzer.config.defaults import (
 from repo_analyzer.logging.setup import setup_logging
 from repo_analyzer.output.output_factory import OutputFactory
 from repo_analyzer.traversal.traverser import get_directory_structure, get_directory_structure_stream
+from colorama import init as colorama_init
 
 DEFAULT_THREAD_MULTIPLIER = 2
 
@@ -36,6 +37,7 @@ def initialize_cache_directory(cache_path: Path) -> Path:
     return cache_path
 
 def run() -> None:
+    colorama_init(autoreset=True)
     args = parse_arguments()
 
     config_manager = Config()
