@@ -91,6 +91,7 @@ class ConnectionPool:
 
     @contextmanager
     def get_connection_context(self) -> Generator[sqlite3.Connection, None, None]:
+        conn: Optional[sqlite3.Connection] = None  # Initialisierung von conn
         try:
             conn = self.pool.get(timeout=10)
             if not self._validate_connection(conn):
