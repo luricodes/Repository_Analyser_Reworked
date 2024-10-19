@@ -14,8 +14,7 @@ init(autoreset=True)
 
 
 def compute_file_hash(file_path: Path, algorithm: str = "sha256") -> Optional[str]:
-    """
-    Berechnet den Hash einer Datei basierend auf dem angegebenen Algorithmus.
+    """Berechnet den Hash einer Datei basierend auf dem angegebenen Algorithmus.
 
     Args:
         file_path (Path): Der Pfad zur Datei.
@@ -38,7 +37,7 @@ def compute_file_hash(file_path: Path, algorithm: str = "sha256") -> Optional[st
 
     try:
         with file_path.open('rb') as file:
-            for chunk in iter(lambda: file.read(4096), b""):
+            for chunk in iter(lambda: file.read(65536), b""):
                 hasher.update(chunk)
         return hasher.hexdigest()
     except FileNotFoundError:
