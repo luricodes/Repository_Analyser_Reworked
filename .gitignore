@@ -51,6 +51,8 @@ coverage.xml
 .pytest_cache/
 tests/
 output.json
+output.yaml
+output.xml
 
 # MyPy
 .mypy_cache/
