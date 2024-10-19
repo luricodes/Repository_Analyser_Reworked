@@ -3,13 +3,15 @@
 import logging
 from pathlib import Path
 from typing import Any, Dict, List, Set, Tuple, Optional, Generator
-
-from colorama import Fore, Style
 from concurrent.futures import ThreadPoolExecutor, as_completed, Future
 from tqdm import tqdm
 
 from repo_analyzer.processing.file_processor import process_file
 from repo_analyzer.traversal.patterns import matches_patterns
+from colorama import Fore, Style
+
+# Importiere das shutdown_event aus dem neuen flags.py Modul
+from repo_analyzer.core.flags import shutdown_event
 
 def traverse_and_collect(
     root_dir: Path,
@@ -18,22 +20,6 @@ def traverse_and_collect(
     exclude_patterns: List[str],
     follow_symlinks: bool
 ) -> Tuple[List[Path], int, int]:
-    """
-    Durchläuft das Verzeichnis rekursiv, sammelt eingeschlossene Dateien und zählt
-    die Anzahl der eingeschlossenen und ausgeschlossenen Dateien.
-
-    Args:
-        root_dir (Path): Das Wurzelverzeichnis zum Traversieren.
-        excluded_folders (Set[str]): Eine Menge von Ordnernamen, die ausgeschlossen werden sollen.
-        excluded_files (Set[str]): Eine Menge von Dateinamen, die ausgeschlossen werden sollen.
-        exclude_patterns (List[str]): Eine Liste von Mustern zum Ausschließen von Dateien und Ordnern.
-        follow_symlinks (bool): Gibt an, ob symbolischen Links gefolgt werden sollen.
-
-    Returns:
-        Tuple[List[Path], int, int]: Eine Liste der eingeschlossenen Dateipfade,
-                                      die Anzahl der eingeschlossenen Dateien und
-                                      die Anzahl der ausgeschlossenen Dateien.
-    """
     paths: List[Path] = []
     included = 0
     excluded = 0
@@ -41,6 +27,8 @@ def traverse_and_collect(
 
     def _traverse(current_dir: Path) -> None:
         nonlocal included, excluded
+        if shutdown_event.is_set():
+            return  # Früher Abbruch, wenn Shutdown angefordert wurde
         try:
             if follow_symlinks:
                 resolved_dir: Path = current_dir.resolve()
@@ -58,6 +46,8 @@ def traverse_and_collect(
 
         try:
             for entry in current_dir.iterdir():
+                if shutdown_event.is_set():
+                    return  # Früher Abbruch, wenn Shutdown angefordert wurde
                 if entry.is_dir():
                     if (
                         entry.name in excluded_folders
@@ -105,25 +95,6 @@ def get_directory_structure(
     encoding: str = 'utf-8',
     hash_algorithm: Optional[str] = "md5",
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    """
-    Ermittelt die Verzeichnisstruktur und eine Zusammenfassung der Dateien.
-
-    Args:
-        root_dir (Path): Das Wurzelverzeichnis zum Traversieren.
-        max_file_size (int): Maximale Dateigröße in Bytes.
-        include_binary (bool): Ob binäre Dateien einbezogen werden sollen.
-        excluded_folders (Set[str]): Ausgeschlossene Ordner.
-        excluded_files (Set[str]): Ausgeschlossene Dateien.
-        follow_symlinks (bool): Ob symbolischen Links gefolgt werden soll.
-        image_extensions (Set[str]): Zusätzliche Bilddateiendungen.
-        exclude_patterns (List[str]): Ausgeschlossene Muster.
-        threads (int): Anzahl der Threads für die parallele Verarbeitung.
-        encoding (str, optional): Standard-Encoding für Textdateien.
-        hash_algorithm (Optional[str], optional): Hash-Algorithmus zur Verifizierung.
-
-    Returns:
-        Tuple[Dict[str, Any], Dict[str, Any]]: Die Verzeichnisstruktur und die Zusammenfassung.
-    """
     dir_structure: Dict[str, Any] = {}
 
     files_to_process, included_files, excluded_files_count = traverse_and_collect(
@@ -153,6 +124,8 @@ def get_directory_structure(
         future_to_file: Dict[Future[Tuple[str, Any]], Path] = {}
         try:
             for file_path in files_to_process:
+                if shutdown_event.is_set():
+                    break  # Abbruch bei gesetztem Flag
                 future = executor.submit(
                     process_file,
                     file_path,
@@ -176,6 +149,8 @@ def get_directory_structure(
 
         try:
             for future in as_completed(future_to_file):
+                if shutdown_event.is_set():
+                    break  # Abbruch bei gesetztem Flag
                 file_path: Path = future_to_file[future]
                 try:
                     filename, file_info = future.result()
@@ -251,25 +226,6 @@ def get_directory_structure_stream(
     encoding: str = 'utf-8',
     hash_algorithm: Optional[str] = "md5",
 ) -> Generator[Dict[str, Any], None, None]:
-    """
-    Ermittelt die Verzeichnisstruktur und liefert die Daten als Generator.
-
-    Args:
-        root_dir (Path): Das Wurzelverzeichnis zum Traversieren.
-        max_file_size (int): Maximale Dateigröße in Bytes.
-        include_binary (bool): Ob binäre Dateien einbezogen werden sollen.
-        excluded_folders (Set[str]): Ausgeschlossene Ordner.
-        excluded_files (Set[str]): Ausgeschlossene Dateien.
-        follow_symlinks (bool): Ob symbolischen Links gefolgt werden soll.
-        image_extensions (Set[str]): Zusätzliche Bilddateiendungen.
-        exclude_patterns (List[str]): Ausgeschlossene Muster.
-        threads (int): Anzahl der Threads für die parallele Verarbeitung.
-        encoding (str, optional): Standard-Encoding für Textdateien.
-        hash_algorithm (Optional[str], optional): Hash-Algorithmus zur Verifizierung.
-
-    Yields:
-        Dict[str, Any]: Ein Teil der Verzeichnisstruktur oder die Zusammenfassung.
-    """
     files_to_process, included_files, excluded_files_count = traverse_and_collect(
         root_dir,
         excluded_folders,
@@ -296,6 +252,8 @@ def get_directory_structure_stream(
     with ThreadPoolExecutor(max_workers=threads) as executor:
         future_to_file: Dict[Future[Tuple[str, Any]], Path] = {}
         for file_path in files_to_process:
+            if shutdown_event.is_set():
+                break  # Abbruch bei gesetztem Flag
             future = executor.submit(
                 process_file,
                 file_path,
@@ -307,29 +265,37 @@ def get_directory_structure_stream(
             )
             future_to_file[future] = file_path
 
-        for future in as_completed(future_to_file):
-            file_path: Path = future_to_file[future]
-            try:
-                filename, file_info = future.result()
-                if file_info is not None:
-                    try:
-                        relative_parent: Path = file_path.parent.relative_to(root_dir)
-                    except ValueError:
-                        relative_parent = file_path.parent
+        try:
+            for future in as_completed(future_to_file):
+                if shutdown_event.is_set():
+                    break  # Abbruch bei gesetztem Flag
+                file_path: Path = future_to_file[future]
+                try:
+                    filename, file_info = future.result()
+                    if file_info is not None:
+                        try:
+                            relative_parent: Path = file_path.parent.relative_to(root_dir)
+                        except ValueError:
+                            relative_parent = file_path.parent
 
-                    yield {
-                        "parent": str(relative_parent),
-                        "filename": filename,
-                        "info": file_info
-                    }
-            except Exception as e:
-                logging.error(f"Fehler beim Verarbeiten der Datei {file_path}: {e}")
-                failed_files.append({
-                    "file": str(file_path),
-                    "error": str(e)
-                })
-            finally:
-                pbar.update(1)
+                        yield {
+                            "parent": str(relative_parent),
+                            "filename": filename,
+                            "info": file_info
+                        }
+                except Exception as e:
+                    logging.error(f"Fehler beim Verarbeiten der Datei {file_path}: {e}")
+                    failed_files.append({
+                        "file": str(file_path),
+                        "error": str(e)
+                    })
+                finally:
+                    pbar.update(1)
+        except KeyboardInterrupt:
+            logging.warning("\nAbbruch durch Benutzer während der Verarbeitung. Versuche, laufende Aufgaben zu beenden...")
+            executor.shutdown(wait=False, cancel_futures=True)
+            pbar.close()
+            raise
 
     pbar.close()
 

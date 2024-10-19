@@ -1,6 +1,7 @@
 # repo_analyzer/core/application.py
 
 import logging
+import signal
 import multiprocessing
 import sys
 from pathlib import Path
@@ -25,7 +26,17 @@ from repo_analyzer.output.output_factory import OutputFactory
 from repo_analyzer.traversal.traverser import get_directory_structure, get_directory_structure_stream
 from colorama import init as colorama_init
 
+from .flags import shutdown_event  # Import aus dem neuen Modul
+
 DEFAULT_THREAD_MULTIPLIER = 2
+
+def signal_handler(sig, frame):
+    if not shutdown_event.is_set():
+        logging.warning("Programm durch Benutzer unterbrochen (STRG+C).")
+        shutdown_event.set()
+    else:
+        logging.warning("Zweites STRG+C erkannt. Sofortiger Abbruch.")
+        sys.exit(1)
 
 def initialize_cache_directory(cache_path: Path) -> Path:
     try:
@@ -39,6 +50,10 @@ def initialize_cache_directory(cache_path: Path) -> Path:
 def run() -> None:
     colorama_init(autoreset=True)
     args = parse_arguments()
+
+    # Registriere den globalen Signal-Handler
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
 
     config_manager = Config()
     try:
@@ -211,6 +226,12 @@ def run() -> None:
             f"{' und die Zusammenfassung ' if include_summary else ''}"
             f"wurden in '{output_file}' gespeichert."
         )
+    except KeyboardInterrupt:
+        if shutdown_event.is_set():
+            logging.warning("Erzwungener Programmabbruch.")
+        else:
+            logging.warning("Programm durch Benutzer unterbrochen (STRG+C).")
+        sys.exit(1)
     except (OSError, IOError) as e:
         logging.error(
             f"Fehler beim Schreiben der Ausgabedatei nach Abbruch: {str(e)}"
