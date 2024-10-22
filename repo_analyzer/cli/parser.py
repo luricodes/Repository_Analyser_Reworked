@@ -5,37 +5,31 @@ import os
 from pathlib import Path
 
 def get_default_cache_path() -> str:
-    """
-    Gibt den Standardpfad für das Cache-Verzeichnis zurück.
-    """
     home = Path.home()
     return str(home / "Documents" / "Datenbank") if os.name == 'nt' else str(home / ".repo_analyzer" / "cache")
 
 def parse_arguments():
-    """
-    Parst die Kommandozeilenargumente und gibt die konfigurierten Argumente zurück.
-    """
     parser = argparse.ArgumentParser(
         description=(
-            "Listet ein Repository in einer JSON-, YAML-, XML- oder NDJSON-Datei auf."
+            "Listet ein Repository in einer JSON-, YAML-, XML-, NDJSON-, DOT- oder CSV-Datei auf."
         ),
         epilog=(
             "Beispiele:\\n"
             "  repo_analyzer /pfad/zum/repo -o output.json\\n"
             "  repo_analyzer --exclude-folders build dist --include-binary --format yaml\\n"
             "  repo_analyzer /pfad/zum/repo -o output.ndjson --format ndjson --stream\\n"
+            "  repo_analyzer /pfad/zum/repo -o output.dot --format dot\\n"
+            "  repo_analyzer /pfad/zum/repo -o output.csv --format csv\\n"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     
-    # Pflichtargument: root_directory
     parser.add_argument(
         "root_directory",
         type=str,
         help="Das Wurzelverzeichnis des zu analysierenden Repositorys."
     )
     
-    # Optionale Argumente
     parser.add_argument(
         "-o",
         "--output",
@@ -143,7 +137,7 @@ def parse_arguments():
     parser.add_argument(
         "-f",
         "--format",
-        choices=["json", "yaml", "xml", "ndjson"],  # NDJSON hinzugefügt
+        choices=["json", "yaml", "xml", "ndjson", "dot", "csv"],
         default="json",
         help="Format der Ausgabedatei (Standard: json).",
     )
@@ -156,8 +150,13 @@ def parse_arguments():
     
     args = parser.parse_args()
 
-    # Automatische Dateiendung hinzufügen, falls nicht vorhanden
-    if not args.output.endswith(f".{args.format}"):
-        args.output += f".{args.format}"
+    # Validierung der Ausgabe-Endung
+    expected_extension = f".{args.format}"
+    if not args.output.lower().endswith(expected_extension):
+        args.output += expected_extension
+
+    # Zusätzliche Validierungen
+    if args.stream and args.format not in ["json", "ndjson"]:
+        parser.error("--stream ist nur für die Formate JSON und NDJSON verfügbar.")
 
     return args
