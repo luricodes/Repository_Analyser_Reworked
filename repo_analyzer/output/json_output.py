@@ -4,7 +4,7 @@ import json
 import logging
 import os
 from typing import Any, Dict, Generator
-
+from repo_analyzer.utils.time_utils import format_timestamp  # Importiert aus dem Hilfsmodul
 from colorama import Fore, Style
 
 class JSONStreamWriter:
@@ -54,11 +54,7 @@ class JSONStreamWriter:
 
 def output_to_json(data: Dict[str, Any], output_file: str) -> None:
     """
-    Schreibt die Daten in eine JSON-Datei im Standardmodus.
-
-    Args:
-        data (Dict[str, Any]): Die Daten, die in die JSON-Datei geschrieben werden sollen.
-        output_file (str): Der Pfad zur Ausgabedatei.
+    Schreibt Daten im JSON-Format in eine Datei.
     """
     try:
         with open(output_file, 'w', encoding='utf-8') as out_file:

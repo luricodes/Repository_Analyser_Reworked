@@ -1,4 +1,4 @@
-# repo_analyzer/output/__init__.py# repo_analyzer/output/__init__.py
+# repo_analyzer/output/__init__.py
 
 from .json_output import output_to_json, output_to_json_stream
 from .yaml_output import output_to_yaml

@@ -1,5 +1,3 @@
-# repo_analyzer/processing/file_processor.py
-
 import base64
 import logging
 import os
@@ -10,7 +8,6 @@ from ..cache.sqlite_cache import get_cached_entry, set_cached_entry, get_connect
 from ..processing.hashing import compute_file_hash
 from ..utils.mime_type import is_binary
 
-# Create a module-specific logger
 logger = logging.getLogger(__name__)
 
 def process_file(
@@ -21,6 +18,17 @@ def process_file(
     encoding: str = 'utf-8',
     hash_algorithm: Optional[str] = "md5",
 ) -> Tuple[str, Optional[Dict[str, Any]]]:
+    """
+    Verarbeitet eine einzelne Datei und sammelt relevante Informationen.
+    
+    :param file_path: Pfad zur Datei.
+    :param max_file_size: Maximale Dateigröße in Bytes.
+    :param include_binary: Gibt an, ob binäre Dateien einbezogen werden sollen.
+    :param image_extensions: Set von Bilddateiendungen.
+    :param encoding: Encoding für Textdateien.
+    :param hash_algorithm: Hash-Algorithmus zur Verifizierung.
+    :return: Tuple mit Dateinamen und den gesammelten Informationen oder Fehlerdetails.
+    """
     filename = file_path.name
 
     try:
@@ -47,27 +55,22 @@ def process_file(
     file_hash = None
     file_info = None
 
-    # Check cache
     if hash_algorithm is not None:
         cached_entry = _check_cache(file_path, current_size, current_mtime, hash_algorithm)
         if cached_entry:
             return filename, cached_entry
 
-    # Compute hash if needed
     if hash_algorithm is not None:
         file_hash = _compute_hash(file_path, hash_algorithm)
         if isinstance(file_hash, dict) and file_hash.get("type") == "error":
             return filename, file_hash
 
-    # Process file content
     file_info = _process_file_content(file_path, include_binary, image_extensions, max_file_size, encoding)
-    if file_info.get("type") == "error" or file_info.get("type") == "excluded":
+    if file_info.get("type") in ["error", "excluded"]:
         return filename, file_info
 
-    # Add metadata
     _add_metadata(file_info, stat)
 
-    # Update cache
     if hash_algorithm is not None and file_hash is not None:
         _update_cache(file_path, file_hash, hash_algorithm, file_info, current_size, current_mtime)
 
