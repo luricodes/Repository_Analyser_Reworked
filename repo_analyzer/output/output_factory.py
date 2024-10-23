@@ -11,7 +11,7 @@ from .csv_output import output_to_csv
 
 class OutputFactory:
     """
-    Factory-Klasse zur Erzeugung von Ausgabemethoden basierend auf dem gewünschten Format.
+    Factory class for creating output methods based on the desired format.
     """
     _output_methods: Dict[str, Callable[..., None]] = {
         "json": output_to_json,
@@ -31,4 +31,4 @@ class OutputFactory:
             return cls._output_methods[format]
         except KeyError:
             available = ', '.join(cls._output_methods.keys())
-            raise ValueError(f"Unbekanntes Ausgabeformat: {format}. Verfügbare Formate sind: {available}.")
+            raise ValueError(f"Unknown output format: {format}. Available formats are: {available}.")

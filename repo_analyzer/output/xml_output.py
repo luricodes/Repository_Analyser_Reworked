@@ -27,7 +27,7 @@ def dict_to_xml(parent: Element, data: Any) -> None:
     if isinstance(data, dict):
         for key, value in data.items():
             if isinstance(value, dict) and 'type' in value:
-                # Datei
+                # File
                 file_element = SubElement(parent, 'file', name=key)
                 for file_key, file_value in value.items():
                     if file_key != 'name' and file_key != 'type':
@@ -40,16 +40,16 @@ def dict_to_xml(parent: Element, data: Any) -> None:
                         child = SubElement(file_element, sanitize_tag(file_key))
                         child.text = str(file_value)
             elif isinstance(value, dict):
-                # Ordner
+                # Directory
                 dir_element = SubElement(parent, 'directory', name=key)
                 dict_to_xml(dir_element, value)
             elif isinstance(value, list):
-                # Falls eine Liste vorhanden ist, z.B. für mehrere Dateien oder Ordner
+                # If a list is present, e.g., for multiple files or directories
                 for item in value:
                     if isinstance(item, dict):
                         dict_to_xml(parent, item)
             else:
-                # Andere Typen können als Text hinzugefügt werden
+                # Other types can be added as text
                 child = SubElement(parent, sanitize_tag(key))
                 child.text = str(value)
     elif isinstance(data, list):
@@ -67,7 +67,7 @@ def prettify_xml(element: Element) -> str:
         reparsed = minidom.parseString(rough_string)
         return reparsed.toprettyxml(indent="  ")
     except Exception as e:
-        logging.error(f"{Fore.RED}Fehler beim Formatieren der XML: {e}{Style.RESET_ALL}")
+        logging.error(f"{Fore.RED}Error formatting XML: {e}{Style.RESET_ALL}")
         return rough_string.decode('utf-8')
 
 def output_to_xml(data: Dict[str, Any], output_file: str) -> None:
@@ -75,18 +75,18 @@ def output_to_xml(data: Dict[str, Any], output_file: str) -> None:
     Writes the data to an XML file with improved structure and readability.
     """
     try:
-        logging.debug(f"Beginne XML-Konvertierung mit Daten: {data}")
+        logging.debug(f"Starting XML conversion with data: {data}")
         root = Element('repository')
         dict_to_xml(root, data)
 
         pretty_xml = prettify_xml(root)
-        logging.debug(f"XML-Struktur nach Konvertierung: {pretty_xml[:200]}...")  # Loggt die ersten 200 Zeichen
+        logging.debug(f"XML structure after conversion: {pretty_xml[:200]}...")  # because its a shitty format
 
         with open(output_file, 'w', encoding='utf-8') as xml_file:
             xml_file.write(pretty_xml)
         
-        logging.info(f"XML-Ausgabe erfolgreich in '{output_file}' geschrieben.")
+        logging.info(f"XML output successfully written to '{output_file}'.")
     except Exception as e:
         logging.error(
-            f"{Fore.RED}Fehler beim Konvertieren der Daten zu XML: {e}{Style.RESET_ALL}"
+            f"{Fore.RED}Error converting data to XML: {e}{Style.RESET_ALL}"
         )

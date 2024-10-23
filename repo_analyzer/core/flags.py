@@ -2,5 +2,5 @@
 
 import threading
 
-# Thread-sicheres Event zur Signalisierung eines Shutdowns
+# Thread-safe event for signalling a shutdown
 shutdown_event = threading.Event()

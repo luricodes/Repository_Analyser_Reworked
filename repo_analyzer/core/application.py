@@ -26,24 +26,24 @@ from repo_analyzer.output.output_factory import OutputFactory
 from repo_analyzer.traversal.traverser import get_directory_structure, get_directory_structure_stream
 from colorama import init as colorama_init
 
-from .flags import shutdown_event  # Import aus dem neuen Modul
+from .flags import shutdown_event
 
 DEFAULT_THREAD_MULTIPLIER = 2
 
 def signal_handler(sig, frame):
     if not shutdown_event.is_set():
-        logging.warning("Programm durch Benutzer unterbrochen (STRG+C).")
+        logging.warning("Programme interrupted by user (CTRL+C).")
         shutdown_event.set()
     else:
-        logging.warning("Zweites STRG+C erkannt. Sofortiger Abbruch.")
+        logging.warning("Second CTRL+C recognised. Immediate cancellation.")
         sys.exit(1)
 
 def initialize_cache_directory(cache_path: Path) -> Path:
     try:
         cache_path.mkdir(parents=True, exist_ok=True)
-        logging.debug(f"Cache-Verzeichnis erstellt oder existiert bereits: {cache_path}")
+        logging.debug(f"Cache directory created or already exists: {cache_path}")
     except OSError as e:
-        logging.error(f"Fehler beim Erstellen des Cache-Verzeichnisses '{cache_path}': {e}")
+        logging.error(f"Error when creating the cache directory '{cache_path}': {e}")
         sys.exit(1)
     return cache_path
 
@@ -51,7 +51,7 @@ def run() -> None:
     colorama_init(autoreset=True)
     args = parse_arguments()
 
-    # Registriere den globalen Signal-Handler
+    # Register the global signal handler
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
@@ -59,10 +59,10 @@ def run() -> None:
     try:
         config_manager.load(args.config)
     except FileNotFoundError:
-        logging.error(f"Konfigurationsdatei nicht gefunden: {args.config}")
+        logging.error(f"Configuration file not found: {args.config}")
         sys.exit(1)
     except Exception as e:
-        logging.error(f"Fehler beim Laden der Konfigurationsdatei: {e}")
+        logging.error(f"Error loading the configuration file: {e}")
         sys.exit(1)
     config = config_manager.data
 
@@ -89,20 +89,20 @@ def run() -> None:
 
     if args.no_hash:
         hash_algorithm = None
-        logging.info("Hash-Verifizierung ist deaktiviert.")
+        logging.info("Hash verification is deactivated.")
     else:
         hash_algorithm = args.hash_algorithm
-        logging.info(f"Verwende Hash-Algorithmus: {hash_algorithm}")
+        logging.info(f"Use hash algorithm: {hash_algorithm}")
 
     if threads is None:
         threads = multiprocessing.cpu_count() * DEFAULT_THREAD_MULTIPLIER
-        logging.info(f"Dynamisch festgelegte Anzahl der Threads: {threads}")
+        logging.info(f"Dynamically defined number of threads: {threads}")
 
     try:
         max_file_size = config_manager.get_max_size(cli_max_size=args.max_size)
-        logging.info(f"Maximale Dateigröße zum Lesen: {max_file_size / (1024 * 1024)} MB")
+        logging.info(f"Maximum file size for reading: {max_file_size / (1024 * 1024)} MB")
     except ValueError as ve:
-        logging.error(f"Fehler bei der Bestimmung der maximalen Dateigröße: {ve}")
+        logging.error(f"Error when determining the maximum file size: {ve}")
         sys.exit(1)
 
     config_excluded_folders: Set[str] = set(config.get('exclude_folders', []))
@@ -130,22 +130,22 @@ def run() -> None:
         '.tiff',
     }.union(additional_image_extensions)
 
-    logging.info(f"Durchsuche das Verzeichnis: {root_directory}")
-    logging.info(f"Ausgeschlossene Ordner: {', '.join(sorted(excluded_folders))}")
-    logging.info(f"Ausgeschlossene Dateien: {', '.join(sorted(excluded_files))}")
+    logging.info(f"Search the directory: {root_directory}")
+    logging.info(f"Excluded folders: {', '.join(sorted(excluded_folders))}")
+    logging.info(f"Excluded files: {', '.join(sorted(excluded_files))}")
     if not include_binary:
-        logging.info("Binäre Dateien und Bilddateien sind ausgeschlossen.")
+        logging.info("Binary files and image files are excluded.")
     else:
-        logging.info("Binäre Dateien und Bilddateien werden einbezogen.")
-    logging.info(f"Ausgabe in: {output_file} ({output_format})")
+        logging.info("Binary files and image files are included.")
+    logging.info(f"Issue in: {output_file} ({output_format})")
     logging.info(
-        f"Symbolische Links werden {'gefolgt' if follow_symlinks else 'nicht gefolgt'}"
+        f"Symbolic links are {'followed' if follow_symlinks else 'not followed'}"
     )
-    logging.info(f"Bilddateiendungen: {', '.join(sorted(image_extensions))}")
-    logging.info(f"Ausschlussmuster: {', '.join(exclude_patterns)}")
-    logging.info(f"Anzahl der Threads: {threads}")
-    logging.info(f"Standard-Encoding: {encoding}")
-    logging.info(f"Cache-Pfad: {cache_path}")
+    logging.info(f"Image file extensions: {', '.join(sorted(image_extensions))}")
+    logging.info(f"Exclusion pattern: {', '.join(exclude_patterns)}")
+    logging.info(f"Number of threads: {threads}")
+    logging.info(f"Standard encoding: {encoding}")
+    logging.info(f"Cache path: {cache_path}")
 
     cache_dir: Path = initialize_cache_directory(cache_path)
     cache_db_path: Path = cache_dir / CACHE_DB_FILE
@@ -153,20 +153,20 @@ def run() -> None:
     try:
         initialize_connection_pool(db_path_str, pool_size=pool_size)
     except Exception as e:
-        logging.error(f"Fehler beim Initialisieren des Verbindungspools: {e}")
+        logging.error(f"Error when initialising the connection pool: {e}")
         sys.exit(1)
 
     try:
         clean_cache(root_directory)
     except Exception as e:
-        logging.error(f"Fehler beim Bereinigen des Caches: {e}")
+        logging.error(f"Error when clearing the cache: {e}")
         sys.exit(1)
 
     try:
         if stream_mode:
-            # Streaming-Modus verwenden
+            # Use Streaming-Mode
             if output_format in ["json", "ndjson"]:
-                # JSON-Streaming oder NDJSON-Output verwenden
+                # USE JSON-Streaming or NDJSON-Output
                 data_gen = get_directory_structure_stream(
                     root_dir=root_directory,
                     max_file_size=max_file_size,
@@ -183,10 +183,10 @@ def run() -> None:
                 output_function = OutputFactory.get_output(output_format, streaming=stream_mode)
                 output_function(data_gen, output_file)
             else:
-                logging.error("--stream ist nur für die Formate JSON und NDJSON verfügbar.")
+                logging.error("--stream is only available for the JSON and NDJSON formats.")
                 sys.exit(1)
         else:
-            # Standardmodus verwenden
+            # Standardmode
             structure, summary = get_directory_structure(
                 root_dir=root_directory,
                 max_file_size=max_file_size,
@@ -200,7 +200,7 @@ def run() -> None:
                 encoding=encoding,
                 hash_algorithm=hash_algorithm,
             )
-            # Generiere die zusammengefassten Daten
+            # Generate summary
             output_data: Dict[str, Any] = {
                 "summary": summary,
                 "structure": structure
@@ -208,26 +208,26 @@ def run() -> None:
             OutputFactory.get_output(output_format)(output_data, output_file)
 
         logging.info(
-            f"Der aktuelle Stand der Ordnerstruktur"
-            f"{' und die Zusammenfassung ' if include_summary else ''}"
-            f"wurden in '{output_file}' gespeichert."
+            f"The current status of the folder structure"
+            f"{' and the summary ' if include_summary else ''}"
+            f" have been saved in'{output_file}'"
         )
     except KeyboardInterrupt:
         if shutdown_event.is_set():
-            logging.warning("Erzwungener Programmabbruch.")
+            logging.warning("Forced programme abort.")
         else:
-            logging.warning("Programm durch Benutzer unterbrochen (STRG+C).")
+            logging.warning("Programme interrupted by user (CTRL+C).")
         sys.exit(1)
     except (OSError, IOError) as e:
         logging.error(
-            f"Fehler beim Schreiben der Ausgabedatei nach Abbruch: {str(e)}"
+            f"Error when writing the output file after cancellation: {str(e)}"
         )
         sys.exit(1)
     except ValueError as ve:
-        logging.error(f"Fehler beim Auswählen des Ausgabeformats: {ve}")
+        logging.error(f"Error when selecting the output format: {ve}")
         sys.exit(1)
     finally:
         try:
             close_all_connections()
         except Exception as e:
-            logging.error(f"Fehler beim Schließen der Verbindungen: {e}")
+            logging.error(f"Error when closing the connections: {e}")

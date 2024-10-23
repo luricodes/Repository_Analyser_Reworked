@@ -8,38 +8,38 @@ from typing import Any, Dict, Optional
 import yaml
 from colorama import Fore, Style
 
-# Konstanten für unterstützte Dateiendungen
+# Constants for supported file extensions
 SUPPORTED_EXTENSIONS = {'.yaml', '.yml', '.json'}
 
 
 def log_error(message: str) -> None:
     """
-    Protokolliert eine Fehlermeldung in roter Farbe.
+    Logs an error message in red color.
 
     Args:
-        message (str): Die Fehlermeldung.
+        message (str): The error message.
     """
     logging.error(f"{Fore.RED}{message}{Style.RESET_ALL}")
 
 
 def load_config(config_path: Optional[str]) -> Dict[str, Any]:
     """
-    Lädt eine Konfigurationsdatei (YAML oder JSON).
+    Loads a configuration file (YAML or JSON).
 
     Args:
-        config_path (Optional[str]): Der Pfad zur Konfigurationsdatei.
+        config_path (Optional[str]): The path to the configuration file.
 
     Returns:
-        Dict[str, Any]: Die geladene Konfiguration als Dictionary.
-                        Gibt ein leeres Dictionary zurück, wenn kein Pfad angegeben ist
-                        oder ein Fehler beim Laden auftritt.
+        Dict[str, Any]: The loaded configuration as a dictionary.
+                        Returns an empty dictionary if no path is provided
+                        or an error occurs while loading.
     """
     if not config_path:
         return {}
 
     config_file = Path(config_path)
     if not config_file.is_file():
-        log_error(f"Die Konfigurationsdatei existiert nicht oder ist kein reguläres Datei: {config_path}")
+        log_error(f"The configuration file does not exist or is not a regular file: {config_path}")
         return {}
 
     try:
@@ -50,19 +50,19 @@ def load_config(config_path: Optional[str]) -> Dict[str, Any]:
             elif file_suffix == '.json':
                 config = json.load(file)
             else:
-                log_error(f"Unbekanntes Konfigurationsdateiformat: {config_path}")
+                log_error(f"Unknown configuration file format: {config_path}")
                 return {}
     except (yaml.YAMLError, json.JSONDecodeError) as parse_err:
-        log_error(f"Fehler beim Parsen der Konfigurationsdatei: {parse_err}")
+        log_error(f"Error parsing the configuration file: {parse_err}")
         return {}
     except IOError as io_err:
-        log_error(f"IO-Fehler beim Laden der Konfigurationsdatei: {io_err}")
+        log_error(f"IO error while loading the configuration file: {io_err}")
         return {}
     except Exception as e:
-        log_error(f"Unerwarteter Fehler beim Laden der Konfigurationsdatei: {e}")
+        log_error(f"Unexpected error while loading the configuration file: {e}")
         return {}
 
-    # Validierung der Konfigurationsparameter
+    # Validation of configuration parameters
     config = validate_config(config)
 
     return config
@@ -70,27 +70,27 @@ def load_config(config_path: Optional[str]) -> Dict[str, Any]:
 
 def validate_config(config: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Validiert die geladenen Konfigurationsparameter.
+    Validates the loaded configuration parameters.
 
     Args:
-        config (Dict[str, Any]): Das geladene Konfigurations-Dictionary.
+        config (Dict[str, Any]): The loaded configuration dictionary.
 
     Returns:
-        Dict[str, Any]: Das validierte Konfigurations-Dictionary.
-                        Ungültige Einträge werden entfernt.
+        Dict[str, Any]: The validated configuration dictionary.
+                        Invalid entries are removed.
     """
-    # Validierung des 'max_size' Parameters
+    # Validation of the 'max_size' parameter
     max_size = config.get('max_size')
     if max_size is not None:
         if not isinstance(max_size, int) or max_size <= 0:
-            log_error(f"Ungültiger Wert für 'max_size' in der Konfigurationsdatei: {max_size}")
-            config.pop('max_size')  # Entfernen ungültiger Werte
+            log_error(f"Invalid value for 'max_size' in the configuration file: {max_size}")
+            config.pop('max_size')  # Remove invalid values
 
-    # Weitere Validierungen können hier hinzugefügt werden
-    # Beispiel:
+    # Additional validations can be added here
+    # Example:
     # log_level = config.get('log_level')
     # if log_level not in {'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'}:
-    #     log_error(f"Ungültiger Wert für 'log_level': {log_level}")
+    #     log_error(f"Invalid value for 'log_level': {log_level}")
     #     config.pop('log_level')
 
     return config

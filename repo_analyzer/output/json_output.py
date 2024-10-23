@@ -4,13 +4,13 @@ import json
 import logging
 import os
 from typing import Any, Dict, Generator
-from repo_analyzer.utils.time_utils import format_timestamp  # Importiert aus dem Hilfsmodul
+from repo_analyzer.utils.time_utils import format_timestamp
 from colorama import Fore, Style
 
 class JSONStreamWriter:
     """
-    Kontextmanager für das inkrementelle Schreiben einer JSON-Datei.
-    Sichert, dass die JSON-Struktur korrekt abgeschlossen wird, auch bei Unterbrechungen.
+    Context manager for incrementally writing a JSON file.
+    Ensures that the JSON structure is properly closed, even in case of interruptions.
     """
 
     def __init__(self, output_file: str):
@@ -21,7 +21,7 @@ class JSONStreamWriter:
     def __enter__(self):
         self.file = open(self.output_file, 'w', encoding='utf-8')
         self.file.write('{\n')
-        self.file.write('  "structure": [\n')  # Changed to list for streaming
+        self.file.write('  "structure": [\n')
         return self
 
     def write_entry(self, data: Dict[str, Any]) -> None:
@@ -48,29 +48,29 @@ class JSONStreamWriter:
                     self.file.write('}\n')
                 except Exception as e:
                     logging.error(
-                        f"{Fore.RED}Fehler beim Abschließen der JSON-Struktur: {e}{Style.RESET_ALL}"
+                        f"{Fore.RED}Error closing the JSON structure: {e}{Style.RESET_ALL}"
                     )
             self.file.close()
 
 def output_to_json(data: Dict[str, Any], output_file: str) -> None:
     """
-    Schreibt Daten im JSON-Format in eine Datei.
+    Writes data in JSON format to a file.
     """
     try:
         with open(output_file, 'w', encoding='utf-8') as out_file:
             json.dump(data, out_file, ensure_ascii=False, indent=4)
     except Exception as e:
         logging.error(
-            f"{Fore.RED}Fehler beim Schreiben der JSON-Ausgabedatei: {e}{Style.RESET_ALL}"
+            f"{Fore.RED}Error writing the JSON output file: {e}{Style.RESET_ALL}"
         )
 
 def output_to_json_stream(data_generator: Generator[Dict[str, Any], None, None], output_file: str) -> None:
     """
-    Schreibt die Daten in eine JSON-Datei im Streaming-Modus.
+    Writes the data to a JSON file in streaming mode.
 
     Args:
-        data_generator (Generator[Dict[str, Any], None, None]): Ein Generator, der die zu schreibenden Daten liefert.
-        output_file (str): Der Pfad zur Ausgabedatei.
+        data_generator (Generator[Dict[str, Any], None, None]): A generator that yields the data to be written.
+        output_file (str): The path to the output file.
     """
     try:
         with JSONStreamWriter(output_file) as writer:
@@ -99,5 +99,5 @@ def output_to_json_stream(data_generator: Generator[Dict[str, Any], None, None],
                 writer.write_summary({})
     except Exception as e:
         logging.error(
-            f"{Fore.RED}Fehler beim Schreiben der JSON-Ausgabedatei im Streaming-Modus: {e}{Style.RESET_ALL}"
+            f"{Fore.RED}Error writing the JSON output file in streaming mode: {e}{Style.RESET_ALL}"
         )

@@ -17,7 +17,7 @@ def process_file(
     max_file_size: int,
     include_binary: bool,
     image_extensions: Set[str],
-    encoding: Optional[str] = None,  # Standard-Encoding ist jetzt None
+    encoding: Optional[str] = None,
     hash_algorithm: Optional[str] = "md5",
 ) -> Tuple[str, Optional[Dict[str, Any]]]:
     filename = file_path.name

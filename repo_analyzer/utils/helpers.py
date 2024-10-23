@@ -7,8 +7,8 @@ from pathlib import Path
 
 def is_binary_alternative(file_path: Path) -> bool:
     """
-    Alternative Methode zur Binärdatei-Erkennung:
-    Prüft, ob die Datei NULL-Bytes enthält.
+    Alternative method for binary file detection:
+    Checks if the file contains NULL bytes.
     """
     try:
         with open(file_path, 'rb') as f:
@@ -17,5 +17,5 @@ def is_binary_alternative(file_path: Path) -> bool:
                 return True
         return False
     except Exception as e:
-        logging.error(f"{Fore.RED}Fehler bei der alternativen Binärprüfung für {file_path}: {e}{Style.RESET_ALL}")
+        logging.error(f"{Fore.RED}Error during alternative binary check for {file_path}: {e}{Style.RESET_ALL}")
         return False

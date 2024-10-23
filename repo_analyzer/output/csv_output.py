@@ -5,19 +5,19 @@ from pathlib import Path
 from colorama import Fore, Style
 from datetime import datetime
 
-# Maximale Länge der Content-Spalte (optional)
+# Maximum length of the content column (optional)
 MAX_CONTENT_LENGTH = 900000
 
 def truncate_content(content: str) -> str:
     if len(content) > MAX_CONTENT_LENGTH:
-        return content[:MAX_CONTENT_LENGTH] + '... [Inhalt gekürzt]'
+        return content[:MAX_CONTENT_LENGTH] + '... [Content truncated]'
     return content
 
 def output_to_csv(data: Dict[str, Any], output_file: str) -> None:
-    logging.debug("Starte CSV-Ausgabefunktion.")
+    logging.debug("Starting CSV output function.")
     try:
         with open(output_file, 'w', newline='', encoding='utf-8') as csv_file:
-            # Hinzufügen der 'Content'-Spalte und Verwendung von QUOTE_ALL zur Vermeidung von Escaping-Problemen
+            # Add the 'Content' column and use QUOTE_ALL to avoid escaping issues
             fieldnames = ['Path', 'Type', 'Size', 'Created', 'Modified', 'Permissions', 'Hash', 'Content']
             writer = csv.DictWriter(csv_file, fieldnames=fieldnames, quoting=csv.QUOTE_ALL)
             writer.writeheader()
@@ -38,7 +38,7 @@ def output_to_csv(data: Dict[str, Any], output_file: str) -> None:
                                 'Hash': '',
                                 'Content': ''
                             })
-                            logging.debug(f"Schreibe Ordner: {current_path}")
+                            logging.debug(f"Writing folder: {current_path}")
                             traverse(value, current_path)
                         else:
                             size = value.get("size", "")
@@ -48,7 +48,7 @@ def output_to_csv(data: Dict[str, Any], output_file: str) -> None:
                             file_hash = value.get("file_hash", "")
                             content = value.get("content", "")
                             
-                            # Inhalt ggf. kürzen
+                            # Truncate content if necessary
                             content = truncate_content(content)
                             
                             writer.writerow({
@@ -61,7 +61,7 @@ def output_to_csv(data: Dict[str, Any], output_file: str) -> None:
                                 'Hash': file_hash,
                                 'Content': content
                             })
-                            logging.debug(f"Schreibe Datei: {current_path}")
+                            logging.debug(f"Writing file: {current_path}")
                     else:
                         writer.writerow({
                             'Path': current_path,
@@ -73,27 +73,27 @@ def output_to_csv(data: Dict[str, Any], output_file: str) -> None:
                             'Hash': '',
                             'Content': ''
                         })
-                        logging.debug(f"Schreibe unbekannten Typ: {current_path}")
+                        logging.debug(f"Writing unknown type: {current_path}")
 
             def format_timestamp(timestamp: Any) -> str:
                 if isinstance(timestamp, (int, float)):
                     try:
                         return datetime.fromtimestamp(timestamp).isoformat()
                     except (OSError, OverflowError, ValueError):
-                        logging.warning(f"Ungültiger Timestamp: {timestamp}")
+                        logging.warning(f"Invalid timestamp: {timestamp}")
                         return ""
                 return ""
 
             structure = data.get("structure", data)
-            logging.debug(f"Datenstruktur vor Traversierung: {structure}")
+            logging.debug(f"Data structure before traversal: {structure}")
 
             traverse(structure)
 
             summary = data.get("summary")
             if summary:
-                # Leere Zeile für bessere Lesbarkeit
+                # Empty line for better readability
                 writer.writerow({})
-                # Kopfzeile für die Zusammenfassung
+                # Header row for the summary
                 writer.writerow({
                     'Path': 'Summary',
                     'Type': '',
@@ -104,9 +104,9 @@ def output_to_csv(data: Dict[str, Any], output_file: str) -> None:
                     'Hash': '',
                     'Content': ''
                 })
-                logging.debug("Schreibe Summary.")
+                logging.debug("Writing summary.")
                 for key, value in summary.items():
-                    # Optional: Kürze Zusammenfassungswerte, falls zu lang
+                    # Optional: Truncate summary values if too long
                     value = truncate_content(str(value))
                     writer.writerow({
                         'Path': key,
@@ -119,10 +119,10 @@ def output_to_csv(data: Dict[str, Any], output_file: str) -> None:
                         'Content': value
                     })
 
-        logging.info(f"CSV-Ausgabe erfolgreich in '{output_file}' geschrieben.")
+        logging.info(f"CSV output successfully written to '{output_file}'.")
     except IOError as e:
-        logging.error(f"IO-Fehler beim Schreiben der CSV-Ausgabedatei: {e}")
+        logging.error(f"IO error while writing the CSV output file: {e}")
     except csv.Error as e:
-        logging.error(f"CSV-Fehler: {e}")
+        logging.error(f"CSV error: {e}")
     except Exception as e:
-        logging.error(f"Unerwarteter Fehler beim Schreiben der CSV-Ausgabedatei: {e}")
+        logging.error(f"Unexpected error while writing the CSV output file: {e}")

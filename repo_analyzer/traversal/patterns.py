@@ -11,26 +11,26 @@ from colorama import Fore, Style
 @lru_cache(maxsize=None)
 def compile_regex(pattern: str) -> Pattern:
     """
-    Kompiliert ein Regex-Muster und cached es.
+    Compiles a regex pattern and caches it.
 
     Args:
-        pattern (str): Das Regex-Muster als String.
+        pattern (str): The regex pattern as a string.
 
     Returns:
-        Pattern: Das kompilierte Regex-Muster.
+        Pattern: The compiled regex pattern.
     """
     return re.compile(pattern)
 
 def matches_patterns(filename: str, patterns: Sequence[str]) -> bool:
     """
-    Prüft, ob der Dateiname einem der Muster entspricht (Glob oder Regex).
+    Checks if the filename matches any of the patterns (Glob or Regex).
 
     Args:
-        filename (str): Der Name der Datei.
-        patterns (Sequence[str]): Eine Sequenz von Mustern (Glob oder Regex).
+        filename (str): The name of the file.
+        patterns (Sequence[str]): A sequence of patterns (Glob or Regex).
 
     Returns:
-        bool: True, wenn der Dateiname einem der Muster entspricht, sonst False.
+        bool: True if the filename matches any of the patterns, otherwise False.
     """
     for pattern in patterns:
         if pattern.startswith('regex:'):
@@ -41,7 +41,7 @@ def matches_patterns(filename: str, patterns: Sequence[str]) -> bool:
                     return True
             except re.error as e:
                 logging.error(
-                    f"{Fore.RED}Ungültiges Regex-Muster '{regex}': {e}{Style.RESET_ALL}"
+                    f"{Fore.RED}Invalid regex pattern '{regex}': {e}{Style.RESET_ALL}"
                 )
         else:
             if fnmatch.fnmatch(filename, pattern):

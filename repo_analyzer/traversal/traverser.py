@@ -37,13 +37,13 @@ def traverse_and_collect(
                 resolved_dir = current_dir.resolve()
                 if resolved_dir in visited_paths:
                     logging.warning(
-                        f"{Fore.RED}Zirkulärer symbolischer Link gefunden: {current_dir}{Style.RESET_ALL}"
+                        f"{Fore.RED}Circular symbolic link found: {current_dir}{Style.RESET_ALL}"
                     )
                     continue
                 visited_paths.add(resolved_dir)
         except Exception as e:
             logging.error(
-                f"{Fore.RED}Fehler beim Auflösen von {current_dir}: {e}{Style.RESET_ALL}"
+                f"{Fore.RED}Error when resolving {current_dir}: {e}{Style.RESET_ALL}"
             )
             continue
 
@@ -59,7 +59,7 @@ def traverse_and_collect(
                         or matches_patterns(entry.name, exclude_patterns)
                     ):
                         logging.debug(
-                            f"{Fore.CYAN}Ausschließen von Ordner: {entry}{Style.RESET_ALL}"
+                            f"{Fore.CYAN}Exclude folders: {entry}{Style.RESET_ALL}"
                         )
                         continue
                     stack.append(entry)
@@ -69,7 +69,7 @@ def traverse_and_collect(
                         or matches_patterns(entry.name, exclude_patterns)
                     ):
                         logging.debug(
-                            f"{Fore.YELLOW}Ausschließen von Datei: {entry}{Style.RESET_ALL}"
+                            f"{Fore.YELLOW}Exclude file: {entry}{Style.RESET_ALL}"
                         )
                         excluded += 1
                         continue
@@ -77,11 +77,11 @@ def traverse_and_collect(
                     included += 1
         except PermissionError as e:
             logging.warning(
-                f"{Fore.YELLOW}Konnte Verzeichnis nicht lesen: {current_dir} - {e}{Style.RESET_ALL}"
+                f"{Fore.YELLOW}Could not read directory: {current_dir} - {e}{Style.RESET_ALL}"
             )
         except Exception as e:
             logging.error(
-                f"{Fore.RED}Fehler beim Durchlaufen von {current_dir}: {e}{Style.RESET_ALL}"
+                f"{Fore.RED}Errors when passing through {current_dir}: {e}{Style.RESET_ALL}"
             )
 
     return paths, included, excluded
@@ -112,13 +112,13 @@ def get_directory_structure(
     total_files: int = included_files + excluded_files_count
     excluded_percentage: float = (excluded_files_count / total_files * 100) if total_files else 0.0
 
-    logging.info(f"Gesamtzahl der Dateien: {total_files}")
-    logging.info(f"Ausgeschlossene Dateien: {excluded_files_count} ({excluded_percentage:.2f}%)")
-    logging.info(f"Verarbeitete Dateien: {included_files}")
+    logging.info(f"Total number of files: {total_files}")
+    logging.info(f"Excluded files: {excluded_files_count} ({excluded_percentage:.2f}%)")
+    logging.info(f"Processed files: {included_files}")
     
     pbar: tqdm = tqdm(
         total=included_files,
-        desc="Verarbeite Dateien",
+        desc="Process files",
         unit="file",
         dynamic_ncols=True
     )
@@ -130,7 +130,7 @@ def get_directory_structure(
         try:
             for file_path in files_to_process:
                 if shutdown_event.is_set():
-                    break  # Abbruch bei gesetztem Flag
+                    break  # Cancellation with flag set
                 future = executor.submit(
                     process_file,
                     file_path,
@@ -142,12 +142,12 @@ def get_directory_structure(
                 )
                 future_to_file[future] = file_path
         except KeyboardInterrupt:
-            logging.warning("\nAbbruch durch Benutzer. Versuche, laufende Aufgaben zu beenden...")
+            logging.warning("\nCancellation by user. Attempts to terminate running tasks...")
             executor.shutdown(wait=False, cancel_futures=True)
             pbar.close()
             raise
         except Exception as e:
-            logging.error(f"Unerwarteter Fehler während des Einreichens von Aufgaben: {e}")
+            logging.error(f"Unexpected error during submission of tasks: {e}")
             executor.shutdown(wait=False, cancel_futures=True)
             pbar.close()
             raise
@@ -155,7 +155,7 @@ def get_directory_structure(
         try:
             for future in as_completed(future_to_file):
                 if shutdown_event.is_set():
-                    break  # Abbruch bei gesetztem Flag
+                    break  # Abreak with flag set
                 file_path: Path = future_to_file[future]
                 try:
                     filename, file_info = future.result()
@@ -182,16 +182,16 @@ def get_directory_structure(
                         file_path.name
                     ] = {
                         "type": "error",
-                        "content": f"Fehler bei der Verarbeitung: {str(e)}"
+                        "content": f"Errors during processing: {str(e)}"
                     }
-                    logging.error(f"Fehler beim Verarbeiten der Datei {file_path}: {e}")
+                    logging.error(f"Error when processing the file {file_path}: {e}")
                     failed_files.append(
                         {"file": str(file_path), "error": str(e)}
                     )
                 finally:
                     pbar.update(1)
         except KeyboardInterrupt:
-            logging.warning("\nAbbruch durch Benutzer während der Verarbeitung. Versuche, laufende Aufgaben zu beenden...")
+            logging.warning("\nCancellation by user during processing. Attempts to terminate running tasks...")
             executor.shutdown(wait=False, cancel_futures=True)
             pbar.close()
             raise
@@ -209,12 +209,12 @@ def get_directory_structure(
     if hash_algorithm is not None:
         summary["hash_algorithm"] = hash_algorithm
 
-    logging.info("Zusammenfassung:")
-    logging.info(f"  Verarbeitete Dateien: {included_files}")
-    logging.info(f"  Ausgeschlossene Dateien: {excluded_files_count} ({excluded_percentage:.2f}%)")
-    logging.info(f"  Fehlgeschlagene Dateien: {len(failed_files)}")
+    logging.info("Summary:")
+    logging.info(f"  Processed files: {included_files}")
+    logging.info(f"  Excluded files: {excluded_files_count} ({excluded_percentage:.2f}%)")
+    logging.info(f"  Failed files: {len(failed_files)}")
     if hash_algorithm is not None:
-        logging.info(f"  Verwendeter Hash-Algorithmus: {hash_algorithm}")
+        logging.info(f"  Hash algorithm used: {hash_algorithm}")
 
     return dir_structure, summary
 
@@ -241,13 +241,13 @@ def get_directory_structure_stream(
     total_files: int = included_files + excluded_files_count
     excluded_percentage: float = (excluded_files_count / total_files * 100) if total_files else 0.0
 
-    logging.info(f"Gesamtzahl der Dateien: {total_files}")
-    logging.info(f"Ausgeschlossene Dateien: {excluded_files_count} ({excluded_percentage:.2f}%)")
-    logging.info(f"Verarbeitete Dateien: {included_files}")
+    logging.info(f"Total number of files: {total_files}")
+    logging.info(f"Excluded files: {excluded_files_count} ({excluded_percentage:.2f}%)")
+    logging.info(f"Processed files: {included_files}")
     
     pbar: tqdm = tqdm(
         total=included_files,
-        desc="Verarbeite Dateien",
+        desc="Process files",
         unit="file",
         dynamic_ncols=True
     )
@@ -258,7 +258,7 @@ def get_directory_structure_stream(
         future_to_file: Dict[Future[Tuple[str, Any]], Path] = {}
         for file_path in files_to_process:
             if shutdown_event.is_set():
-                break  # Abbruch bei gesetztem Flag
+                break  # Cancellation with flag set
             future = executor.submit(
                 process_file,
                 file_path,
@@ -273,7 +273,7 @@ def get_directory_structure_stream(
         try:
             for future in as_completed(future_to_file):
                 if shutdown_event.is_set():
-                    break  # Abbruch bei gesetztem Flag
+                    break  # Cancellation with flag set
                 file_path: Path = future_to_file[future]
                 try:
                     filename, file_info = future.result()
@@ -289,13 +289,13 @@ def get_directory_structure_stream(
                             "info": file_info
                         }
                 except Exception as e:
-                    logging.error(f"Fehler beim Verarbeiten der Datei {file_path}: {e}")
+                    logging.error(f"Error when processing the file {file_path}: {e}")
                     yield {
                         "parent": str(file_path.parent.relative_to(root_dir)) if root_dir in file_path.parent.resolve().parents else str(file_path.parent),
                         "filename": file_path.name,
                         "info": {
                             "type": "error",
-                            "content": f"Fehler beim Verarbeiten der Datei: {str(e)}",
+                            "content": f"Error while processing the file: {str(e)}",
                             "exception_type": type(e).__name__,
                             "exception_message": str(e)
                         }
@@ -303,7 +303,7 @@ def get_directory_structure_stream(
                 finally:
                     pbar.update(1)
         except KeyboardInterrupt:
-            logging.warning("\nAbbruch durch Benutzer während der Verarbeitung. Versuche, laufende Aufgaben zu beenden...")
+            logging.warning("\nCancellation by user during processing. Attempts to terminate running tasks...")
             executor.shutdown(wait=False, cancel_futures=True)
             pbar.close()
             raise

@@ -11,8 +11,6 @@ from logging.handlers import RotatingFileHandler
 
 class ColorFormatter(logging.Formatter):
     """Custom formatter to add colors to console logs based on log level.
-
-    Fügt den Konsolenlogs Farben hinzu, die dem Log-Level entsprechen.
     """
 
     LEVEL_COLORS = {
@@ -46,13 +44,13 @@ def setup_logging(
     backup_count: int = 5,
 ) -> None:
     """
-    Konfiguriert das Logging-Modul mit separaten Handlern für Konsole und Datei.
+    Configures the logging module with separate handlers for console and file.
 
-    :param verbose: Wenn True, wird der Log-Level auf DEBUG gesetzt, sonst auf INFO.
-    :param log_file: Optionaler Pfad zur Log-Datei.
-    :param file_level: Log-Level für den Datei-Handler. Standard: DEBUG.
-    :param max_bytes: Maximale Dateigröße in Bytes für den rotierenden Datei-Handler. Standard: 5 MB.
-    :param backup_count: Anzahl der Backup-Dateien für den rotierenden Datei-Handler. Standard: 5.
+    :param verbose: If True, the log level is set to DEBUG, otherwise to INFO.
+    :param log_file: Optional path to the log file.
+    :param file_level: Log level for the file handler. Standard: DEBUG.
+    :param max_bytes: Maximum file size in bytes for the rotating file handler. Standard: 5 MB.
+    :param backup_count: Number of backup files for the rotating file handler. Standard: 5.
     """
     log_format = "%(asctime)s - %(levelname)s - %(message)s"
     date_format = "%Y-%m-%d %H:%M:%S"
@@ -61,11 +59,11 @@ def setup_logging(
     logger = logging.getLogger()
     logger.setLevel(log_level)
 
-    # Entfernt alle bestehenden Handler, um doppelte Logs zu vermeiden
+    # Removes all existing handlers to avoid duplicate logs
     if logger.hasHandlers():
         logger.handlers.clear()
 
-    # Format für Konsolen-Logs mit Farben
+    # Format for console logs with colours
     console_formatter = ColorFormatter(fmt=log_format, datefmt=date_format)
 
     # Console Handler
@@ -76,12 +74,12 @@ def setup_logging(
 
     if log_file:
         try:
-            # Sicherstellen, dass das Log-Verzeichnis existiert
+            # Ensure that the log directory exists
             log_dir = os.path.dirname(log_file)
             if log_dir and not os.path.exists(log_dir):
                 os.makedirs(log_dir, exist_ok=True)
 
-            # Format für Datei-Logs ohne Farben
+            # Format for file logs without colours
             file_formatter = logging.Formatter(fmt=log_format, datefmt=date_format)
 
             # Rotating File Handler
@@ -91,7 +89,7 @@ def setup_logging(
                 backupCount=backup_count,
                 encoding="utf-8",
             )
-            file_handler.setLevel(file_level)  # Datei-Handler speichert alle Logs ab file_level
+            file_handler.setLevel(file_level)
             file_handler.setFormatter(file_formatter)
             logger.addHandler(file_handler)
         except (IOError, OSError) as e:

@@ -5,11 +5,11 @@ from colorama import Fore, Style
 
 def output_to_dot(data: Dict[str, Any], output_file: str) -> None:
     """
-    Generiert eine DOT-Datei basierend auf der Repository-Struktur.
-    Inkludiert Dateiinhalte und Metadaten in den Knotenlabels.
+    Generates a DOT file based on the repository structure.
+    Includes file contents and metadata in the node labels.
     
-    :param data: Die Repository-Struktur und Zusammenfassung.
-    :param output_file: Pfad zur Ausgabedatei im DOT-Format.
+    :param data: The repository structure and summary.
+    :param output_file: Path to the output file in DOT format.
     """
     try:
         with open(output_file, 'w', encoding='utf-8') as dot_file:
@@ -19,7 +19,7 @@ def output_to_dot(data: Dict[str, Any], output_file: str) -> None:
 
             def traverse(node: Dict[str, Any], parent_id: str = None):
                 for key, value in node.items():
-                    # Verwende den relativen Pfad als eindeutige ID, ersetze problematische Zeichen
+                    # Use the relative path as a unique ID, replace problematic characters
                     unique_id = sanitize_dot_id(str(Path(key).resolve()))
                     node_label = key.replace('"', '\\"')
 
@@ -29,13 +29,13 @@ def output_to_dot(data: Dict[str, Any], output_file: str) -> None:
                     if isinstance(value, dict):
                         node_type = value.get("type", "directory")
                         if node_type == "directory":
-                            # Füge Metadaten für Verzeichnisse hinzu, falls benötigt
+                            # Add metadata for directories if needed
                             dot_file.write(f'    "{unique_id}" [label="{label}", shape=folder, color="#FFA500"];\n')
                             if parent_id:
                                 dot_file.write(f'    "{parent_id}" -> "{unique_id}";\n')
                             traverse(value, unique_id)
                         else:
-                            # Für Dateien Metadaten und Inhalt einbeziehen
+                            # For files, include metadata and content
                             file_info = value
                             size = file_info.get("size", "N/A")
                             created = file_info.get("created", "N/A")
@@ -44,10 +44,10 @@ def output_to_dot(data: Dict[str, Any], output_file: str) -> None:
                             file_hash = file_info.get("file_hash", "N/A")
                             content = file_info.get("content", "N/A")
 
-                            # Sanitisiere und begrenze den Inhalt
+                            # Sanitize and limit the content
                             sanitized_content = sanitize_dot_label(content[:900000])
 
-                            # Konstruiere das Label mit Metadaten
+                            # Construct the label with metadata
                             label += (
                                 f"\\nSize: {size} bytes"
                                 f"\\nCreated: {created}"
@@ -61,7 +61,7 @@ def output_to_dot(data: Dict[str, Any], output_file: str) -> None:
                             if parent_id:
                                 dot_file.write(f'    "{parent_id}" -> "{unique_id}";\n')
                     else:
-                        # Behandlung unerwarteter Datenstrukturen
+                        # Handle unexpected data structures
                         dot_file.write(f'    "{unique_id}" [label="{key}", shape=note, color="#90EE90"];\n')
                         if parent_id:
                             dot_file.write(f'    "{parent_id}" -> "{unique_id}";\n')
@@ -82,28 +82,28 @@ def output_to_dot(data: Dict[str, Any], output_file: str) -> None:
                     dot_file.write(f'        "{summary_node_id}" [label="{sanitized_key}: {value}", shape=note, color="#D3D3D3"];\n')
                 dot_file.write("    }\n")
             dot_file.write("}\n")
-        logging.info(f"DOT-Ausgabe erfolgreich in '{output_file}' geschrieben.")
+        logging.info(f"DOT output successfully written to '{output_file}'.")
     except Exception as e:
         logging.error(
-            f"{Fore.RED}Fehler beim Schreiben der DOT-Ausgabedatei: {e}{Style.RESET_ALL}"
+            f"{Fore.RED}Error writing the DOT output file: {e}{Style.RESET_ALL}"
         )
 
 def sanitize_dot_id(identifier: str) -> str:
     """
     Sanitizes a string to be used as a DOT node identifier.
-    Ersetzt alle nicht-alphanumerischen Zeichen durch Unterstriche.
+    Replaces all non-alphanumeric characters with underscores.
     
-    :param identifier: Der ursprüngliche Identifier.
-    :return: Ein sanitisiertes Identifier.
+    :param identifier: The original identifier.
+    :return: A sanitized identifier.
     """
     return ''.join([c if c.isalnum() else '_' for c in identifier])
 
 def sanitize_dot_label(label: str) -> str:
     """
     Sanitizes a string to be used within DOT labels.
-    Ersetzt Anführungszeichen und Zeilenumbrüche.
+    Replaces quotation marks and line breaks.
     
-    :param label: Der ursprüngliche Label-Text.
-    :return: Ein sanitisiertes Label.
+    :param label: The original label text.
+    :return: A sanitized label.
     """
     return label.replace('"', '\\"').replace('\n', '\\n')

@@ -14,28 +14,28 @@ def get_magic_instance():
         try:
             thread_local_data.mime = magic.Magic(mime=True)
         except Exception as e:
-            logging.error(f"{Fore.RED}Fehler beim Initialisieren von magic: {e}{Style.RESET_ALL}")
+            logging.error(f"{Fore.RED}Error initializing magic: {e}{Style.RESET_ALL}")
             thread_local_data.mime = None
     return thread_local_data.mime
 
 def is_binary(file_path: Path) -> bool:
     """
-    Prüft, ob eine Datei binär ist, basierend auf dem MIME-Typ.
-    Falls die MIME-Erkennung fehlschlägt, verwendet sie eine alternative Methode.
+    Checks if a file is binary based on its MIME type.
+    If MIME detection fails, it uses an alternative method.
     """
     try:
         mime = get_magic_instance()
         if mime is None:
             return is_binary_alternative(file_path)
         
-        # Lese nur die ersten 8192 Bytes der Datei
+        # Read only the first 8192 bytes of the file
         with open(file_path, 'rb') as f:
             file_content = f.read(8192)
         
         mime_type = mime.from_buffer(file_content)
-        logging.debug(f"Datei: {file_path} - MIME-Typ: {mime_type}")
+        logging.debug(f"File: {file_path} - MIME type: {mime_type}")
         return not mime_type.startswith('text/')
     except Exception as e:
-        logging.warning(f"{Fore.YELLOW}Fehler bei der Erkennung des MIME-Typs für {file_path}: {e}{Style.RESET_ALL}")
-        # Alternative Methode zur Binärprüfung
+        logging.warning(f"{Fore.YELLOW}Error detecting MIME type for {file_path}: {e}{Style.RESET_ALL}")
+        # Alternative method for binary check
         return is_binary_alternative(file_path)
