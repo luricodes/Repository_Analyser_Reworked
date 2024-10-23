@@ -25,14 +25,6 @@ class OutputFactory:
 
     @classmethod
     def get_output(cls, format: str, streaming: bool = False) -> Callable[..., None]:
-        """
-        Gibt die passende Ausgabefunktion basierend auf dem Format zurück.
-
-        :param format: Das gewünschte Ausgabeformat.
-        :param streaming: Gibt an, ob der Streaming-Modus verwendet werden soll.
-        :return: Die entsprechende Ausgabefunktion.
-        :raises ValueError: Wenn das Format unbekannt ist.
-        """
         try:
             if streaming and format == "json":
                 return cls._output_methods["json_stream"]

@@ -93,7 +93,7 @@ def parse_arguments():
     parser.add_argument(
         "--stream",
         action="store_true",
-        help="Aktiviert den Streaming-Modus für die Ausgabe (nur für JSON und NDJSON).",
+        help="Aktiviert den Streaming-Modus bei der Ausgabe für JSON und NDJSON. Bei NDJSON ist es standardmäßig aktiviert.",
     )
     parser.add_argument(
         "--verbose",
@@ -158,5 +158,10 @@ def parse_arguments():
     # Zusätzliche Validierungen
     if args.stream and args.format not in ["json", "ndjson"]:
         parser.error("--stream ist nur für die Formate JSON und NDJSON verfügbar.")
+
+    # Automatische Aktivierung von --stream bei ndjson
+    if args.format == "ndjson":
+        args.stream = True
+
 
     return args

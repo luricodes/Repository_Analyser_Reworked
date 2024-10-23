@@ -80,6 +80,7 @@ def run() -> None:
     }
     include_summary: bool = args.include_summary
     output_format: str = args.format
+    stream_mode: bool = args.stream
     threads: Optional[int] = args.threads
     exclude_patterns: List[str] = args.exclude_patterns
     encoding: str = args.encoding
@@ -162,7 +163,7 @@ def run() -> None:
         sys.exit(1)
 
     try:
-        if args.stream:
+        if stream_mode:
             # Streaming-Modus verwenden
             if output_format in ["json", "ndjson"]:
                 # JSON-Streaming oder NDJSON-Output verwenden
@@ -179,9 +180,10 @@ def run() -> None:
                     encoding=encoding,
                     hash_algorithm=hash_algorithm,
                 )
-                OutputFactory.get_output(output_format, streaming=True)(data_gen, output_file)
+                output_function = OutputFactory.get_output(output_format, streaming=stream_mode)
+                output_function(data_gen, output_file)
             else:
-                logging.error("Streaming-Modus ist nur für JSON und NDJSON verfügbar.")
+                logging.error("--stream ist nur für die Formate JSON und NDJSON verfügbar.")
                 sys.exit(1)
         else:
             # Standardmodus verwenden
