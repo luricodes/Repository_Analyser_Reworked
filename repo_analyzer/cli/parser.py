@@ -87,8 +87,8 @@ def parse_arguments():
     parser.add_argument(
         "--encoding",
         type=str,
-        default='utf-8',
-        help="Standard-Encoding für Textdateien (Standard: utf-8)."
+        default=None,
+        help="Standard-Encoding für Textdateien (Standard: Automatische Erkennung)."
     )
     parser.add_argument(
         "--stream",

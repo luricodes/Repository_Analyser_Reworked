@@ -8,6 +8,8 @@ from ..cache.sqlite_cache import get_cached_entry, set_cached_entry, get_connect
 from ..processing.hashing import compute_file_hash
 from ..utils.mime_type import is_binary
 
+import chardet  # Neue Abhängigkeit hinzugefügt
+
 logger = logging.getLogger(__name__)
 
 def process_file(
@@ -15,20 +17,9 @@ def process_file(
     max_file_size: int,
     include_binary: bool,
     image_extensions: Set[str],
-    encoding: str = 'utf-8',
+    encoding: Optional[str] = None,  # Standard-Encoding ist jetzt None
     hash_algorithm: Optional[str] = "md5",
 ) -> Tuple[str, Optional[Dict[str, Any]]]:
-    """
-    Verarbeitet eine einzelne Datei und sammelt relevante Informationen.
-    
-    :param file_path: Pfad zur Datei.
-    :param max_file_size: Maximale Dateigröße in Bytes.
-    :param include_binary: Gibt an, ob binäre Dateien einbezogen werden sollen.
-    :param image_extensions: Set von Bilddateiendungen.
-    :param encoding: Encoding für Textdateien.
-    :param hash_algorithm: Hash-Algorithmus zur Verifizierung.
-    :return: Tuple mit Dateinamen und den gesammelten Informationen oder Fehlerdetails.
-    """
     filename = file_path.name
 
     try:
@@ -184,18 +175,32 @@ def _read_binary_file(file_path: Path, max_file_size: int) -> Dict[str, Any]:
             "exception_message": str(e)
         }
 
-def _read_text_file(file_path: Path, max_file_size: int, encoding: str) -> Dict[str, Any]:
+def _read_text_file(file_path: Path, max_file_size: int, encoding: Optional[str]) -> Dict[str, Any]:
     try:
-        with open(file_path, 'r', encoding=encoding) as f:
-            content = f.read(max_file_size)
-        logger.debug(f"Read text file: {file_path}")
+        with open(file_path, 'rb') as f:
+            raw_data = f.read(max_file_size)
+
+        if encoding is None:
+            result = chardet.detect(raw_data)
+            detected_encoding = result['encoding']
+            confidence = result['confidence']
+            if detected_encoding and confidence >= 0.5:
+                encoding_to_use = detected_encoding
+                logger.debug(f"Detected encoding '{detected_encoding}' with confidence {confidence} for file {file_path}")
+            else:
+                encoding_to_use = 'utf-8'
+                logger.warning(f"Could not reliably detect encoding for {file_path}. Falling back to 'utf-8'.")
+        else:
+            encoding_to_use = encoding
+            logger.debug(f"Using provided encoding '{encoding}' for file {file_path}")
+
+        content = raw_data.decode(encoding_to_use, errors='replace')
+        logger.debug(f"Read text file: {file_path} with encoding {encoding_to_use}")
         return {
             "type": "text",
+            "encoding": encoding_to_use,
             "content": content
         }
-    except UnicodeDecodeError:
-        logger.warning(f"UnicodeDecodeError for file {file_path}. Falling back to binary read.")
-        return _read_binary_file(file_path, max_file_size)
     except Exception as e:
         logger.error(f"Error reading text file {file_path}: {e}")
         return {

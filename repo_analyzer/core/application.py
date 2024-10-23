@@ -83,7 +83,7 @@ def run() -> None:
     stream_mode: bool = args.stream
     threads: Optional[int] = args.threads
     exclude_patterns: List[str] = args.exclude_patterns
-    encoding: str = args.encoding
+    encoding: Optional[str] = args.encoding
     cache_path: Path = Path(args.cache_path).expanduser().resolve()
     pool_size: int = args.pool_size
 
