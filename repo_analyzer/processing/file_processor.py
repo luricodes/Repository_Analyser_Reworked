@@ -8,7 +8,7 @@ from ..cache.sqlite_cache import get_cached_entry, set_cached_entry, get_connect
 from ..processing.hashing import compute_file_hash
 from ..utils.mime_type import is_binary
 
-import chardet  # Neue Abhängigkeit hinzugefügt
+import charset_normalizer
 
 logger = logging.getLogger(__name__)
 
@@ -181,20 +181,20 @@ def _read_text_file(file_path: Path, max_file_size: int, encoding: Optional[str]
             raw_data = f.read(max_file_size)
 
         if encoding is None:
-            result = chardet.detect(raw_data)
-            detected_encoding = result['encoding']
-            confidence = result['confidence']
-            if detected_encoding and confidence >= 0.5:
-                encoding_to_use = detected_encoding
-                logger.debug(f"Detected encoding '{detected_encoding}' with confidence {confidence} for file {file_path}")
+            result = charset_normalizer.from_bytes(raw_data).best()
+            if result:
+                encoding_to_use = result.encoding
+                content = result.str()
+                logger.debug(f"Detected encoding '{encoding_to_use}' for file {file_path}")
             else:
                 encoding_to_use = 'utf-8'
-                logger.warning(f"Could not reliably detect encoding for {file_path}. Falling back to 'utf-8'.")
+                content = raw_data.decode(encoding_to_use, errors='replace')
+                logger.warning(f"Could not detect encoding for {file_path}. Falling back to 'utf-8'.")
         else:
             encoding_to_use = encoding
+            content = raw_data.decode(encoding_to_use, errors='replace')
             logger.debug(f"Using provided encoding '{encoding}' for file {file_path}")
 
-        content = raw_data.decode(encoding_to_use, errors='replace')
         logger.debug(f"Read text file: {file_path} with encoding {encoding_to_use}")
         return {
             "type": "text",

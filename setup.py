@@ -21,7 +21,7 @@ setup(
         "python-magic-bin>=0.4.14",
         "PyYAML>=5.4.1",
         "tqdm>=4.60.0",
-        "chardet>=5.2.0",
+        "charset-normalizer>=3.2.0",
     ],
     classifiers=[
         "Programming Language :: Python :: 3",
