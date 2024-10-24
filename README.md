@@ -39,30 +39,66 @@ Repository Analyzer is a powerful Python tool for analyzing and documenting repo
 
 ## Installation
 
+### Prerequisites
+
+- Python 3.9 or higher
+- Git
+
+### Installation Steps
+
+1. Clone the repository:
 ```bash
-pip install repo_analyzer
+git clone https://github.com/yourusername/repo_analyzer
+cd repo_analyzer
+```
+
+2. Create and activate a virtual environment:
+
+```bash
+# On Windows
+python -m venv venv
+venv\Scripts\activate
+
+# On Linux/Mac
+python3 -m venv venv
+source venv/bin/activate
+```
+
+3. Install the package:
+
+```bash
+# For users
+pip install .
+
+# For developers
+pip install -e ".[dev]"
 ```
 
 ## Usage
 
 Basic usage:
-
 ```bash
-repo_analyzer /path/to/repo -o output.json
+repo_analyzer /path/to/repository -o output.json
 ```
 
-Advanced usage:
-
+Common examples:
 ```bash
-repo_analyzer /path/to/repo \
-    -o output.yaml \
-    --format yaml \
-    --exclude-folders build dist \
-    --exclude-files "*.pyc" \
-    --include-binary \
-    --hash-algorithm sha256 \
-    --threads 4 \
-    --include-summary
+# Generate JSON output
+repo_analyzer /path/to/repo -o analysis.json
+
+# Generate YAML with binary files included
+repo_analyzer /path/to/repo -o analysis.yaml --include-binary
+
+# Generate XML excluding specific folders
+repo_analyzer /path/to/repo -o analysis.xml --exclude-folders node_modules dist
+
+# Stream large repositories to NDJSON
+repo_analyzer /path/to/repo -o analysis --format ndjson ----hash-algorithm sha512
+```
+
+For more options:
+```bash
+repo_analyzer --help
 ```
 
 ### Command Line Options
