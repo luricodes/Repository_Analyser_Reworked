@@ -5,8 +5,7 @@ import os
 from pathlib import Path
 
 def get_default_cache_path() -> str:
-    home = Path.home()
-    return str(home / "Documents" / "Datenbank") if os.name == 'nt' else str(home / ".repo_analyzer" / "cache")
+    return str(Path.cwd() / ".cache")
 
 def parse_arguments():
     parser = argparse.ArgumentParser(
@@ -145,7 +144,7 @@ def parse_arguments():
         "--cache-path",
         type=str,
         default=get_default_cache_path(),
-        help="Path to the cache directory (default: ~/.repo_analyzer/cache)."
+        help="Path to the cache directory (default: ./.cache)."
     )
     
     args = parser.parse_args()

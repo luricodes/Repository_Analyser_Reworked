@@ -181,10 +181,11 @@ def _read_text_file(file_path: Path, max_file_size: int, encoding: Optional[str]
             raw_data = f.read(max_file_size)
 
         if encoding is None:
-            result = charset_normalizer.from_bytes(raw_data).best()
-            if result:
-                encoding_to_use = result.encoding
-                content = result.str()
+            matches = charset_normalizer.from_bytes(raw_data)
+            best_match = matches.best()
+            if best_match:
+                encoding_to_use = best_match.encoding
+                content = str(best_match)  # This is the correct way to get normalized content
                 logger.debug(f"Detected encoding '{encoding_to_use}' for file {file_path}")
             else:
                 encoding_to_use = 'utf-8'

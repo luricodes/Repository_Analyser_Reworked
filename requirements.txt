@@ -3,3 +3,4 @@ dicttoxml
 PyYAML
 tqdm
 python-magic-bin
+charset-normalizer>=3.0.0
