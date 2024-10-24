@@ -1,104 +1,189 @@
-# **Repo Analyzer**
+# Repository Analyzer
 
-Repo Analyzer ist ein Tool zur Analyse von Repository-Strukturen und unterstützt mehrere Ausgabeformate, darunter JSON, YAML, XML und NDJSON. Es ist nützlich für die Analyse großer Verzeichnisse, das Erstellen von Verzeichnisstrukturen und das Zwischenspeichern von Informationen mithilfe einer SQLite-Datenbank.
+[![Python Version](https://img.shields.io/badge/python-3.13%2B-blue.svg)](https://www.python.org/downloads/)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
+Repository Analyzer is a powerful Python tool for analyzing and documenting repository structures. It provides detailed insights into your codebase by generating structured reports in multiple formats.
 
-## **Inhaltsverzeichnis**
+## Features
 
-- [Installation](#installation)
-- [Verwendung](#verwendung)
-- [Features](#features)
-- [Kommandozeilenoptionen](#kommandozeilenoptionen)
-- [Ausgabeformate](#ausgabeformate)
-- [Beispiel](#beispiel)
-- [Konfiguration](#konfiguration)
-- [Lizenz](#lizenz)
+- **Multiple Output Formats**: 
+  - JSON (with streaming support)
+  - YAML
+  - XML
+  - NDJSON (with streaming support)
+  - DOT (GraphViz)
+  - CSV
+  - S-expressions
+  - MessagePack (with streaming support)
 
+- **Advanced File Analysis**:
+  - Automatic file type detection
+  - Encoding detection and normalization
+  - Binary file handling
+  - File hashing (MD5, SHA1, SHA256, SHA512)
+  - File metadata extraction
+  - Customizable file size limits
 
-## **Installation**
+- **Performance Features**:
+  - Multi-threading support
+  - SQLite-based caching system
+  - Streaming mode for large repositories
+  - Memory-efficient processing
 
-1. Klone das Repository:
-```bash
-git clone https://github.com/dein-repo/repo_analyzer.git
-```
-2. Navigiere in das Verzeichnis:
-```bash
-cd repo_analyzer
-```
-3. Installiere die Abhängigkeiten:
-```bash
-pip install -r requirements.txt
-```
-4. Installiere das Tool:
-```bash
-python setup.py install
-```
+- **Filtering Capabilities**:
+  - Exclude specific folders and files
+  - Pattern-based exclusions (glob and regex)
+  - Binary file filtering
+  - Custom image extension handling
 
-
-## **Verwendung**
-
-Das Tool wird über die Kommandozeile aufgerufen und benötigt ein Root-Verzeichnis, das analysiert werden soll, sowie ein Ausgabedateipfad.
-
-Beispiel:
-```bash
-repo_analyzer /pfad/zum/repo -o output.json --format json --include-binary
-```
-
-
-## **Features**
-
-- **Mehrere Ausgabeformate**: JSON, YAML, XML, NDJSON
-- **Parallele Verarbeitung**: Beschleunigung durch Nutzung mehrerer Threads
-- **Caching**: Zwischenspeicherung von Dateiinformationen in einer SQLite-Datenbank
-- **Hash-Verifizierung**: Unterstützung von verschiedenen Hash-Algorithmen (MD5, SHA1, SHA256, SHA512)
-- **Binärdateien-Unterstützung**: Optionale Einbeziehung von Binär- und Bilddateien
-
-
-## **Kommandozeilenoptionen**
-
-- `root_directory`: Das Wurzelverzeichnis des zu analysierenden Repositorys.
-- `-o`, `--output`: Pfad zur Ausgabedatei.
-- `--format`: Das Format der Ausgabedatei (json, yaml, xml, ndjson).
-- `--include-binary`: Beinhaltet Binärdateien in der Analyse.
-- `--threads`: Anzahl der Threads für die parallele Verarbeitung.
-- `--cache-path`: Pfad zum Cache-Verzeichnis.
-
-Weitere Optionen findest du mit:
-```bash
-repo_analyzer --help
-```
-
-
-## **Ausgabeformate**
-
-- **JSON**: Standardausgabeformat, strukturiert die Verzeichnisstruktur in einem hierarchischen Format.
-- **YAML**: Lesbares Format für Konfigurationsdateien.
-- **XML**: Hierarchische Struktur, geeignet für Interoperabilität mit anderen Tools.
-- **NDJSON**: Zeilenbasierte JSON-Ausgabe für Streaming und Big Data-Prozesse.
-
-
-## **Beispiel**
+## Installation
 
 ```bash
-repo_analyzer /pfad/zum/repo -o struktur.json --format json --threads 4 --include-binary
+pip install repo_analyzer
 ```
 
-Das obige Beispiel analysiert das Verzeichnis `/pfad/zum/repo`, gibt die Struktur in die Datei `struktur.json` im JSON-Format aus und nutzt 4 Threads für die Verarbeitung.
+## Usage
 
+Basic usage:
 
-## **Konfiguration**
+```bash
+repo_analyzer /path/to/repo -o output.json
+```
 
-Eine Konfigurationsdatei (JSON oder YAML) kann verwendet werden, um Standardwerte für die Analyse festzulegen. Diese Datei kann über die Option `--config` angegeben werden.
+Advanced usage:
 
-Beispielkonfigurationsdatei (YAML):
+```bash
+repo_analyzer /path/to/repo \
+    -o output.yaml \
+    --format yaml \
+    --exclude-folders build dist \
+    --exclude-files "*.pyc" \
+    --include-binary \
+    --hash-algorithm sha256 \
+    --threads 4 \
+    --include-summary
+```
+
+### Command Line Options
+
+```
+Arguments:
+  root_directory          The root directory to analyze
+
+Options:
+  -o, --output           Path to the output file
+  -f, --format           Output format (default: json)
+  --stream               Enable streaming mode (JSON/NDJSON/MessagePack only)
+  --hash-algorithm       Hash algorithm (md5, sha1, sha256, sha512)
+  --include-binary       Include binary and image files
+  --exclude-folders      List of folders to exclude
+  --exclude-files        List of files to exclude
+  --follow-symlinks      Follow symbolic links
+  --image-extensions     Additional image file extensions
+  --exclude-patterns     Glob or regex patterns for exclusion
+  --threads              Number of threads (default: CPU cores * 2)
+  --encoding            Default encoding (default: auto-detect)
+  --verbose             Enable verbose logging
+  --log-file           Path to log file
+  --no-hash            Disable hash verification
+  --config             Path to configuration file
+  --max-size           Maximum file size in MB
+  --pool-size          Database connection pool size
+  --include-summary    Add analysis summary to output
+  --cache-path         Path to cache directory
+```
+
+## Configuration
+
+You can provide configuration through a YAML or JSON file:
+
 ```yaml
-max_size: 100
+# config.yaml
 exclude_folders:
-  - ".git"
-  - "node_modules"
+  - node_modules
+  - venv
+  - .git
+exclude_files:
+  - "*.pyc"
+  - "*.pyo"
+max_size: 50  # MB
 ```
 
+## Technical Details
 
-## **Lizenz**
+### Architecture
 
-Dieses Projekt steht unter der MIT-Lizenz.
+Repository Analyzer uses a modular architecture with the following key components:
+
+1. **Core Engine**:
+   - Multi-threaded file traversal
+   - Concurrent file processing
+   - Event-based shutdown handling
+
+2. **File Processing**:
+   - MIME type detection using python-magic
+   - Charset detection with charset-normalizer
+   - Configurable hash computation
+
+3. **Caching System**:
+   - SQLite-based file cache
+   - Connection pooling
+   - WAL journal mode for better concurrency
+
+4. **Output Processing**:
+   - Factory pattern for output formats
+   - Streaming support for large datasets
+   - Atomic file writing
+
+### Performance Considerations
+
+- Uses thread pools for parallel processing
+- Implements connection pooling for database operations
+- Supports streaming mode for memory-efficient processing
+- Includes caching to avoid redundant file analysis
+- Provides progress bars for long-running operations
+
+### Default Behaviors
+
+- Excludes common build and temporary directories
+- Auto-detects file encodings
+- Uses MD5 for file hashing by default
+- Limits file size processing to 50MB by default
+
+## Use Cases
+
+- I personally created it to have a full repo in one file to pass it further to ChatGPT or Claude
+- Documentation of project structures
+- Codebase analysis and auditing
+- Repository comparisons
+- Migration planning
+- Dependency analysis
+- Project archiving
+- The SQLite Database can also be used as repo store
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit pull requests.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Author
+
+Lucas Richert  
+Contact: info@lucasrichert.tech
+
+## Acknowledgments
+
+- Built with [colorama](https://pypi.org/project/colorama/) for colored output
+- Uses [python-magic](https://pypi.org/project/python-magic/) for file type detection
+- Uses [charset-normalizer](https://pypi.org/project/charset-normalizer/) for encoding detection
+- Uses [tqdm](https://pypi.org/project/tqdm/) for progress bars
