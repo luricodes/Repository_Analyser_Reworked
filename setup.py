@@ -22,6 +22,7 @@ setup(
         "PyYAML>=5.4.1",
         "tqdm>=4.60.0",
         "charset-normalizer>=3.2.0",
+        "msgpack>=1.1.0"
     ],
     classifiers=[
         "Programming Language :: Python :: 3",
