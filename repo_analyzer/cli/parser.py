@@ -10,7 +10,7 @@ def get_default_cache_path() -> str:
 def parse_arguments():
     parser = argparse.ArgumentParser(
         description=(
-            "Lists a repository into a JSON, YAML, XML, NDJSON, DOT, or CSV file."
+            "Lists a repository into a JSON, YAML, XML, NDJSON, DOT, S-Expressions or CSV file."
         ),
         epilog=(
             "Examples:\\n"
@@ -19,6 +19,8 @@ def parse_arguments():
             "  repo_analyzer /path/to/repo -o output.ndjson --format ndjson --stream\\n"
             "  repo_analyzer /path/to/repo -o output.dot --format dot\\n"
             "  repo_analyzer /path/to/repo -o output.csv --format csv\\n"
+            "  repo_analyzer /path/to/repo -o output.sexp --format sexp\\n"
+            "  repo_analyzer /path/to/repo -o output.xml --format xml\\n"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -136,7 +138,7 @@ def parse_arguments():
     parser.add_argument(
         "-f",
         "--format",
-        choices=["json", "yaml", "xml", "ndjson", "dot", "csv"],
+        choices=["json", "yaml", "xml", "ndjson", "dot", "csv", "sexp"],
         default="json",
         help="Output file format (default: json).",
     )

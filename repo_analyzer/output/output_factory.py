@@ -8,6 +8,7 @@ from .xml_output import output_to_xml
 from .ndjson_output import output_to_ndjson
 from .dot_output import output_to_dot
 from .csv_output import output_to_csv
+from .s_expression_output import output_to_sexp
 
 class OutputFactory:
     """
@@ -21,6 +22,7 @@ class OutputFactory:
         "ndjson": output_to_ndjson,
         "dot": output_to_dot,
         "csv": output_to_csv,
+        "sexp": output_to_sexp,
     }
 
     @classmethod
