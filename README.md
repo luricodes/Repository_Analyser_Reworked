@@ -153,6 +153,7 @@ Repository Analyzer uses a modular architecture with the following key component
 
 ## Use Cases
 
+- Use it in dot format for putting your repo in a visual map
 - I personally created it to have a full repo in one file to pass it further to ChatGPT or Claude
 - Documentation of project structures
 - Codebase analysis and auditing
