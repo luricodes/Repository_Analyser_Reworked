@@ -2,95 +2,76 @@
 
 import logging
 import sys
-import os
+from pathlib import Path
 from typing import Optional
-
-from colorama import Fore, Style
 from logging.handlers import RotatingFileHandler
-
-
-class ColorFormatter(logging.Formatter):
-    """Custom formatter to add colors to console logs based on log level.
-    """
-
-    LEVEL_COLORS = {
-        logging.DEBUG: Fore.CYAN,
-        logging.INFO: Fore.GREEN,
-        logging.WARNING: Fore.YELLOW,
-        logging.ERROR: Fore.RED,
-        logging.CRITICAL: Fore.MAGENTA,
-    }
-
-    def __init__(self, fmt: str, datefmt: Optional[str] = None) -> None:
-        super().__init__(fmt, datefmt)
-
-    def format(self, record: logging.LogRecord) -> str:
-        color = self.LEVEL_COLORS.get(record.levelno, Fore.WHITE)
-        colored_message = f"{color}{record.getMessage()}{Style.RESET_ALL}"
-        original_message = record.getMessage()
-        record.message = colored_message
-        try:
-            formatted = super().format(record)
-        finally:
-            record.message = original_message  # Restore original message
-        return formatted
-
+from .color_formatter import ColorFormatter
+from ..utils.color_support import color_support
 
 def setup_logging(
-    verbose: bool,
+    verbose: bool = False,
     log_file: Optional[str] = None,
-    file_level: int = logging.DEBUG,
-    max_bytes: int = 5 * 1024 * 1024,
+    max_bytes: int = 10 * 1024 * 1024,  # 10MB
     backup_count: int = 5,
+    force_color: bool = False
 ) -> None:
     """
-    Configures the logging module with separate handlers for console and file.
-
-    :param verbose: If True, the log level is set to DEBUG, otherwise to INFO.
-    :param log_file: Optional path to the log file.
-    :param file_level: Log level for the file handler. Standard: DEBUG.
-    :param max_bytes: Maximum file size in bytes for the rotating file handler. Standard: 5 MB.
-    :param backup_count: Number of backup files for the rotating file handler. Standard: 5.
+    Set up logging with proper color support and file handling.
+    
+    Args:
+        verbose: Enable debug logging if True
+        log_file: Optional path to log file
+        max_bytes: Maximum size of log file before rotation
+        backup_count: Number of backup files to keep
+        force_color: Force color output regardless of terminal support
     """
-    log_format = "%(asctime)s - %(levelname)s - %(message)s"
-    date_format = "%Y-%m-%d %H:%M:%S"
+    # Set up root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.DEBUG if verbose else logging.INFO)
 
-    log_level = logging.DEBUG if verbose else logging.INFO
-    logger = logging.getLogger()
-    logger.setLevel(log_level)
+    # Remove any existing handlers
+    root_logger.handlers.clear()
 
-    # Removes all existing handlers to avoid duplicate logs
-    if logger.hasHandlers():
-        logger.handlers.clear()
-
-    # Format for console logs with colours
-    console_formatter = ColorFormatter(fmt=log_format, datefmt=date_format)
-
-    # Console Handler
+    # Console handler
     console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(log_level)
-    console_handler.setFormatter(console_formatter)
-    logger.addHandler(console_handler)
+    console_handler.setFormatter(ColorFormatter())
+    root_logger.addHandler(console_handler)
 
+    # File handler if specified
     if log_file:
         try:
-            # Ensure that the log directory exists
-            log_dir = os.path.dirname(log_file)
-            if log_dir and not os.path.exists(log_dir):
-                os.makedirs(log_dir, exist_ok=True)
+            # Ensure log directory exists
+            log_path = Path(log_file)
+            log_path.parent.mkdir(parents=True, exist_ok=True)
 
-            # Format for file logs without colours
-            file_formatter = logging.Formatter(fmt=log_format, datefmt=date_format)
-
-            # Rotating File Handler
+            # Create rotating file handler
             file_handler = RotatingFileHandler(
                 log_file,
                 maxBytes=max_bytes,
                 backupCount=backup_count,
-                encoding="utf-8",
+                encoding='utf-8'
             )
-            file_handler.setLevel(file_level)
+            
+            # Use a non-colored formatter for file output
+            file_formatter = logging.Formatter(
+                '%(asctime)s [%(levelname)s] %(message)s',
+                datefmt='%Y-%m-%d %H:%M:%S'
+            )
             file_handler.setFormatter(file_formatter)
-            logger.addHandler(file_handler)
-        except (IOError, OSError) as e:
-            logger.error(f"Failed to set up file handler: {e}")
+            root_logger.addHandler(file_handler)
+            
+            logging.info(color_support.success(
+                f"Log file initialized: {log_file}"
+            ))
+            
+        except Exception as e:
+            logging.error(color_support.error(
+                f"Failed to initialize log file: {e}"
+            ))
+
+    # Log initial setup information
+    if verbose:
+        logging.debug(color_support.info("Verbose logging enabled"))
+    logging.debug(color_support.info(
+        f"Color support: {color_support.supports_color()}"
+    ))
