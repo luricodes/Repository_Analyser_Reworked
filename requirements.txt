@@ -1,7 +1,15 @@
-colorama
-dicttoxml
-PyYAML
-tqdm
-python-magic-bin
-charset-normalizer>=3.0.0
-msgpack>=1.0.5
+# Core requirements
+colorama==0.4.6
+dicttoxml==1.7.16
+PyYAML==6.0.1
+tqdm==4.65.0
+charset-normalizer==3.2.0
+msgpack==1.0.5
+typing-extensions==4.7.1
+pathspec==0.11.2
+rich==13.5.2
+click==8.1.7
+
+# Platform-specific magic package
+python-magic-bin==0.4.14; platform_system == "Windows"
+python-magic==0.4.27; platform_system != "Windows"
